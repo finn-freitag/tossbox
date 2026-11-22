@@ -234,7 +234,15 @@ export interface Node {
   enrolled: boolean
   capabilities: NodeCapabilities | null
   allocated: { vcpus: number; cpu_percent: number; ram_mb: number; storage_gb: number; devices: number }
-  usage: { ram_used_mb: number; cpu_used_percent: number; storage_used_gb: number } | null
+  /** Live values from the agent's heartbeat (every 15 s). */
+  usage: {
+    ram_used_mb: number // measured memory of running devices
+    cpu_used_percent: number // whole host
+    storage_used_gb: number // disk actually used by devices
+    host_ram_used_mb?: number
+    host_storage_used_gb?: number
+    host_storage_total_gb?: number
+  } | null
 }
 
 export interface NodeEnrollment {

@@ -53,4 +53,8 @@ type NodeUsage struct {
 	RAMUsedMB      int64   `json:"ram_used_mb"`
 	CPUUsedPercent float64 `json:"cpu_used_percent"`
 	StorageUsedGB  int64   `json:"storage_used_gb"`
+	// Whole host (not only Tossbox devices).
+	HostRAMUsedMB      int64 `json:"host_ram_used_mb"`
+	HostStorageUsedGB  int64 `json:"host_storage_used_gb"`
+	HostStorageTotalGB int64 `json:"host_storage_total_gb"`
 }

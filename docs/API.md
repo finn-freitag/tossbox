@@ -282,9 +282,10 @@ Optional body `{"service": "rdp"}` (default: rdp, else vnc, else ssh). → `{"ur
     "license_pools": [ { "name": "win-retail-pro", "type": "retail", "total": 3, "in_use": 1 } ]
   },
   "allocated": { "vcpus": 6, "cpu_percent": 50, "ram_mb": 8192, "storage_gb": 150, "devices": 2 },
-  "usage": { "ram_used_mb": 6100, "cpu_used_percent": 12.5, "storage_used_gb": 31 }
+  "usage": { "ram_used_mb": 6100, "cpu_used_percent": 12.5, "storage_used_gb": 31, "host_ram_used_mb": 21000, "host_storage_used_gb": 722, "host_storage_total_gb": 914 }
 }
 ```
+`usage` comes from the agent heartbeat (every 15 s) and is measured, not allocated: `ram_used_mb` is the memory running devices really use (docker stats, libvirt QEMU RSS, Incus state); `cpu_used_percent` is whole-host CPU; `storage_used_gb` is the disk devices really occupy; `host_*` cover the whole host (including non-Tossbox workloads) and the filesystem of the agent's data dir.
 `status`: `pending` (not enrolled yet) | `online` | `offline`.
 
 ### `GET /api/nodes` → `[Node]`

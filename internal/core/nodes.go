@@ -364,7 +364,10 @@ func (s *Service) NodeDisconnected(nodeID string) {
 func (s *Service) NodeHeartbeat(ctx context.Context, nodeID string, hb *agentv1.Heartbeat) {
 	var raw json.RawMessage
 	if u := hb.GetUsage(); u != nil {
-		raw, _ = json.Marshal(model.NodeUsage{RAMUsedMB: u.GetRamUsedMb(), CPUUsedPercent: u.GetCpuUsedPercent(), StorageUsedGB: u.GetStorageUsedGb()})
+		raw, _ = json.Marshal(model.NodeUsage{
+			RAMUsedMB: u.GetRamUsedMb(), CPUUsedPercent: u.GetCpuUsedPercent(), StorageUsedGB: u.GetStorageUsedGb(),
+			HostRAMUsedMB: u.GetHostRamUsedMb(), HostStorageUsedGB: u.GetHostStorageUsedGb(), HostStorageTotalGB: u.GetHostStorageTotalGb(),
+		})
 	}
 	if err := s.store.TouchNode(ctx, nodeID, raw); err != nil {
 		s.log.Warn("heartbeat", "node", nodeID, "err", err)

@@ -3,7 +3,7 @@ module github.com/finn-freitag/tossbox
 go 1.27.3
 
 require (
-	github.com/finn-freitag/tb-proto v0.1.0
+	github.com/finn-freitag/tb-proto v0.2.0
 	github.com/google/uuid v1.6.0
 	github.com/jackc/pgx/v5 v5.13.0
 	golang.org/x/crypto v0.59.0

@@ -1011,6 +1011,19 @@ input[type='range'] {
   align-items: center;
   gap: 8px;
 }
+.meters-title {
+  margin: 12px 0 8px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted, inherit);
+}
+.meters-title .small {
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: 400;
+}
 .meters {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));

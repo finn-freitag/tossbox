@@ -90,14 +90,30 @@ function NodeCard({ n, onToken }: { n: Node; onToken: (e: NodeEnrollment) => voi
 
       {cap ? (
         <>
+          <h3 className="meters-title">Allocated to devices</h3>
           <div className="meters">
-            <Meter label="RAM allocated" used={n.allocated.ram_mb} total={ramTotal} fmt={fmtMB} />
-            <Meter label="CPU allocated (%)" used={n.allocated.cpu_percent} total={cpuTotal} fmt={(v) => `${v}%`} />
-            <Meter label="Storage allocated" used={n.allocated.storage_gb} total={storageTotal} fmt={fmtGB} />
+            <Meter label="RAM" used={n.allocated.ram_mb} total={ramTotal} fmt={fmtMB} />
+            <Meter label="CPU" used={n.allocated.cpu_percent} total={cpuTotal} fmt={(v) => `${v}%`} />
+            <Meter label="Storage" used={n.allocated.storage_gb} total={storageTotal} fmt={fmtGB} />
           </div>
+          {n.usage && n.status === 'online' && (
+            <>
+              <h3 className="meters-title">
+                Live usage <span className="muted small">· updated {fmtRelative(n.last_seen)}</span>
+              </h3>
+              <div className="meters">
+                <Meter label="RAM used by devices" used={n.usage.ram_used_mb} total={ramTotal} fmt={fmtMB} />
+                <Meter label="Host CPU" used={Math.round(n.usage.cpu_used_percent * 10) / 10} total={100} fmt={(v) => `${v}%`} />
+                <Meter label="Disk used by devices" used={n.usage.storage_used_gb} total={storageTotal} fmt={fmtGB} />
+                {!!n.usage.host_ram_used_mb && <Meter label="Host RAM (everything)" used={n.usage.host_ram_used_mb} total={cap.host_ram_mb} fmt={fmtMB} />}
+                {!!n.usage.host_storage_total_gb && (
+                  <Meter label="Host disk (everything)" used={n.usage.host_storage_used_gb ?? 0} total={n.usage.host_storage_total_gb} fmt={fmtGB} />
+                )}
+              </div>
+            </>
+          )}
           <p className="muted small">
             {n.allocated.devices} device{n.allocated.devices === 1 ? '' : 's'} · {n.allocated.vcpus} vCPU
-            {n.usage && ` · actual: ${fmtMB(n.usage.ram_used_mb)} RAM, ${n.usage.cpu_used_percent.toFixed(1)}% CPU, ${n.usage.storage_used_gb} GB disk`}
             {lim && ` · limits: ${lim.ram_mb ? fmtMB(lim.ram_mb) : 'all'} RAM, ${lim.cpu_percent || 100}% CPU, ${lim.storage_gb ? fmtGB(lim.storage_gb) : 'all'} disk`}
           </p>
           <div className="drivers">

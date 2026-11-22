@@ -41,6 +41,22 @@ export function fmtRelative(iso: string | null | undefined): string {
   return ''
 }
 
+/** Remaining time until iso as a compact countdown: "2 d 3 h", "1 h 05 min", "12 min 08 s", "45 s". */
+export function fmtCountdown(iso: string, now: number = Date.now()): string {
+  let s = Math.max(0, Math.floor((new Date(iso).getTime() - now) / 1000))
+  const d = Math.floor(s / 86_400)
+  s -= d * 86_400
+  const h = Math.floor(s / 3600)
+  s -= h * 3600
+  const m = Math.floor(s / 60)
+  s -= m * 60
+  const pad = (n: number) => String(n).padStart(2, '0')
+  if (d > 0) return `${d} d ${h} h`
+  if (h > 0) return `${h} h ${pad(m)} min`
+  if (m > 0) return `${m} min ${pad(s)} s`
+  return `${s} s`
+}
+
 export function fmtDate(iso: string | null | undefined): string {
   if (!iso) return '—'
   return new Date(iso).toLocaleString()

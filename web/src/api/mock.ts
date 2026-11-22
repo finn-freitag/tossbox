@@ -108,7 +108,7 @@ const nodes: Node[] = [
       license_pools: [{ name: 'win-retail-pro', type: 'retail', total: 3, in_use: 1 }],
     },
     allocated: { vcpus: 0, cpu_percent: 0, ram_mb: 0, storage_gb: 0, devices: 0 },
-    usage: { ram_used_mb: 0, cpu_used_percent: 4.2, storage_used_gb: 0 },
+    usage: { ram_used_mb: 3420, cpu_used_percent: 23.4, storage_used_gb: 41, host_ram_used_mb: 21500, host_storage_used_gb: 722, host_storage_total_gb: 914 },
   },
   {
     id: 'n-2',

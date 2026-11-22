@@ -1,9 +1,9 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Download, ExternalLink, Loader2, Trash2 } from 'lucide-react'
 import { api, downloadUrl } from '../api/client'
 import { useDeleteDevice, useInfo, usePatchDevice } from '../api/hooks'
 import type { Device, DeviceService } from '../api/types'
-import { errorMessage, fmtMB, fmtRelative, serviceLabel } from '../util'
+import { errorMessage, fmtMB, fmtCountdown, serviceLabel } from '../util'
 import { Confirm, CopyButton, Secret, Switch, useToast } from './ui'
 
 export function PowerSwitch({ device }: { device: Device }) {
@@ -156,12 +156,34 @@ export function ResourceLine({ device }: { device: Device }) {
   )
 }
 
+/** Re-renders every intervalMs and returns the current time. */
+export function useNow(intervalMs: number): number {
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    const t = window.setInterval(() => setNow(Date.now()), intervalMs)
+    return () => window.clearInterval(t)
+  }, [intervalMs])
+  return now
+}
+
 export function Expiry({ device }: { device: Device }) {
+  const exp = device.expires_at ? new Date(device.expires_at).getTime() : 0
+  // Tick every second in the last hour, otherwise every 30 s.
+  const now = useNow(exp && exp - Date.now() < 3_600_000 ? 1000 : 30_000)
   if (!device.expires_at) return <span className="muted small">No expiry</span>
-  const soon = new Date(device.expires_at).getTime() - Date.now() < 3_600_000
+  const left = exp - now
+  const created = new Date(device.created_at).getTime()
+  const title = `Expires ${new Date(device.expires_at).toLocaleString()} · active for ${fmtCountdown(new Date(now).toISOString(), created)}`
+  if (left <= 0) {
+    return (
+      <span className="small text-warn" title={title}>
+        Expired, deleting…
+      </span>
+    )
+  }
   return (
-    <span className={`small ${soon ? 'text-warn' : 'muted'}`} title={new Date(device.expires_at).toLocaleString()}>
-      Expires {fmtRelative(device.expires_at)}
+    <span className={`small ${left < 3_600_000 ? 'text-warn' : 'muted'}`} title={title} style={{ fontVariantNumeric: 'tabular-nums' }}>
+      Expires in {fmtCountdown(device.expires_at, now)}
     </span>
   )
 }
