@@ -9,6 +9,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -370,6 +371,14 @@ func TestEndToEnd(t *testing.T) {
 			Port                              int
 		}
 	}
+	// adb keys are validated and copied into the device spec.
+	if code := e.do("PUT", "/api/me/adb-keys", map[string]any{"adb_keys": []string{"ssh-ed25519 AAAA nope"}}, nil); code != 400 {
+		t.Fatalf("invalid adb key: %d", code)
+	}
+	adbKey := testADBKey() + " me@laptop"
+	if code := e.do("PUT", "/api/me/adb-keys", map[string]any{"adb_keys": []string{adbKey}}, nil); code != 200 {
+		t.Fatalf("set adb keys: %d", code)
+	}
 	code := e.do("POST", "/api/devices", map[string]any{"name": "My Test VM", "template_id": "debian-13",
 		"resources": map[string]any{"vcpus": 2, "ram_mb": 4096, "storage_gb": 20, "cpu_cap_percent": 25}, "ttl_hours": 2}, &dev)
 	if code != 201 || dev.Hostname != "my-test-vm" || dev.FQDN != "my-test-vm.servers.example.com" || len(dev.Services) != 1 {
@@ -383,6 +392,9 @@ func TestEndToEnd(t *testing.T) {
 	if apply.GetDeviceId() != dev.ID || apply.GetServices()[0].GetPublicPort() != 47000 || apply.GetServices()[0].GetPassword() != ssh.Password ||
 		apply.GetTemplate().GetImage().GetUrl() != "https://example.com/d.qcow2" || apply.GetResources().GetCpuCapPercent() != 25 {
 		t.Fatalf("apply: %v", apply)
+	}
+	if k := apply.GetAdbAuthorizedKeys(); len(k) != 1 || k[0] != adbKey {
+		t.Fatalf("adb keys in spec: %v", k)
 	}
 	if r := e.gw.routes(); len(r) != 1 || r[0].Port != 47000 || r[0].Target != "127.0.0.1:47000" {
 		t.Fatalf("gateway routes: %+v", r)
@@ -535,4 +547,11 @@ func TestEndToEnd(t *testing.T) {
 	if code := e.do("PUT", "/api/settings", map[string]any{"overcommit_ram": true}, &st); code != 200 || st["overcommit_ram"] != true || st["password_length"] != float64(24) {
 		t.Fatalf("settings partial update: %d %v", code, st)
 	}
+}
+
+// testADBKey returns a structurally valid adb public key (2048-bit layout).
+func testADBKey() string {
+	raw := make([]byte, 12+8*64)
+	raw[0] = 64
+	return base64.StdEncoding.EncodeToString(raw)
 }

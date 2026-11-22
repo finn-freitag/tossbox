@@ -14,19 +14,23 @@ type User struct {
 	PasswordHash string
 	Role         string
 	SSHKeys      []string
+	ADBKeys      []string
 	Quota        model.Quota
 	CreatedAt    time.Time
 }
 
-const userCols = `id, username, password_hash, role, ssh_keys, quota, created_at`
+const userCols = `id, username, password_hash, role, ssh_keys, adb_keys, quota, created_at`
 
 func scanUser(row interface{ Scan(...any) error }) (*User, error) {
 	u := &User{}
-	if err := row.Scan(&u.ID, &u.Username, &u.PasswordHash, &u.Role, &u.SSHKeys, &u.Quota, &u.CreatedAt); err != nil {
+	if err := row.Scan(&u.ID, &u.Username, &u.PasswordHash, &u.Role, &u.SSHKeys, &u.ADBKeys, &u.Quota, &u.CreatedAt); err != nil {
 		return nil, mapErr(err)
 	}
 	if u.SSHKeys == nil {
 		u.SSHKeys = []string{}
+	}
+	if u.ADBKeys == nil {
+		u.ADBKeys = []string{}
 	}
 	u.Quota = u.Quota.Normalize()
 	return u, nil
@@ -37,9 +41,12 @@ func (s *Store) CreateUser(ctx context.Context, u *User) error {
 	if u.SSHKeys == nil {
 		u.SSHKeys = []string{}
 	}
+	if u.ADBKeys == nil {
+		u.ADBKeys = []string{}
+	}
 	err := s.pool.QueryRow(ctx,
-		`INSERT INTO users (id, username, password_hash, role, ssh_keys, quota) VALUES ($1,$2,$3,$4,$5,$6) RETURNING created_at`,
-		u.ID, u.Username, u.PasswordHash, u.Role, u.SSHKeys, u.Quota.Normalize()).Scan(&u.CreatedAt)
+		`INSERT INTO users (id, username, password_hash, role, ssh_keys, adb_keys, quota) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING created_at`,
+		u.ID, u.Username, u.PasswordHash, u.Role, u.SSHKeys, u.ADBKeys, u.Quota.Normalize()).Scan(&u.CreatedAt)
 	return mapErr(err)
 }
 
@@ -78,10 +85,13 @@ func (s *Store) CountUsers(ctx context.Context) (int, error) {
 	return n, err
 }
 
-// UpdateUser writes password hash, role, ssh keys and quota.
+// UpdateUser writes password hash, role, ssh/adb keys and quota.
 func (s *Store) UpdateUser(ctx context.Context, u *User) error {
-	tag, err := s.pool.Exec(ctx, `UPDATE users SET password_hash=$2, role=$3, ssh_keys=$4, quota=$5 WHERE id=$1`,
-		u.ID, u.PasswordHash, u.Role, u.SSHKeys, u.Quota.Normalize())
+	if u.ADBKeys == nil {
+		u.ADBKeys = []string{}
+	}
+	tag, err := s.pool.Exec(ctx, `UPDATE users SET password_hash=$2, role=$3, ssh_keys=$4, quota=$5, adb_keys=$6 WHERE id=$1`,
+		u.ID, u.PasswordHash, u.Role, u.SSHKeys, u.Quota.Normalize(), u.ADBKeys)
 	if err != nil {
 		return mapErr(err)
 	}

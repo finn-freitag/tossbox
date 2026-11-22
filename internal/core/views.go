@@ -213,7 +213,39 @@ func (s *Service) SSHConfig(ctx context.Context, p Principal, id string) (string
 	return fmt.Sprintf("Host %s\n    HostName %s\n    Port %d\n    User %s\n", d.Hostname, host, svc.PublicPort, d.Username), nil
 }
 
-// GuacamoleURL returns a one-time login URL for Guacamole.
+// guacProtocols are the services Guacamole can open, in order of preference.
+var guacProtocols = []string{"rdp", "vnc", "ssh"}
+
+func guacConnectionName(d *store.Device, service string) string {
+	return d.Hostname + " (" + service + ")"
+}
+
+// guacTargets returns the Guacamole connections of a device.
+func (s *Service) guacTargets(d *store.Device, nodes map[string]string) []guac.Target {
+	addr, ok := nodes[d.NodeID]
+	if !ok || d.Deleting {
+		return nil
+	}
+	pw, err := s.box.Decrypt(d.PasswordEnc)
+	if err != nil {
+		return nil
+	}
+	var out []guac.Target
+	for _, svc := range guacProtocols {
+		if sv := d.Service(svc); sv != nil {
+			// guacd runs next to the dashboard and reaches the node directly.
+			out = append(out, guac.Target{
+				Name: guacConnectionName(d, svc), Protocol: svc,
+				Host: addr, Port: sv.PublicPort, Username: d.Username, Password: pw,
+			})
+		}
+	}
+	return out
+}
+
+// GuacamoleURL returns a short-lived login URL for Guacamole that opens the
+// device's connection. The login also carries the caller's other devices'
+// connections (see guac.Login for why).
 func (s *Service) GuacamoleURL(ctx context.Context, p Principal, id, service string) (string, error) {
 	if !s.cfg.GuacamoleEnabled() {
 		return "", model.Errf(model.CodeNotFound, "guacamole is not configured")
@@ -223,30 +255,34 @@ func (s *Service) GuacamoleURL(ctx context.Context, p Principal, id, service str
 		return "", err
 	}
 	if service == "" {
-		for _, c := range []string{"rdp", "vnc", "ssh"} {
+		for _, c := range guacProtocols {
 			if d.Service(c) != nil {
 				service = c
 				break
 			}
 		}
 	}
-	svc := d.Service(service)
-	if svc == nil || !model.CredentialServices[service] {
+	if d.Service(service) == nil || !model.CredentialServices[service] {
 		return "", model.Errf(model.CodeNotFound, "device has no %s service usable with Guacamole", service)
 	}
-	n, err := s.store.GetNode(ctx, d.NodeID)
+	nodeList, err := s.store.ListNodes(ctx)
 	if err != nil {
 		return "", err
 	}
-	pw, err := s.box.Decrypt(d.PasswordEnc)
-	if err != nil {
-		return "", err
+	nodes := make(map[string]string, len(nodeList))
+	for _, n := range nodeList {
+		nodes[n.ID] = n.Address
 	}
-	// guacd runs next to the dashboard and reaches the node directly.
-	return guac.LoginURL(s.cfg.GuacamoleURL, s.cfg.GuacamoleJSONSecret, p.User.Username, guac.Target{
-		Name: d.Hostname + " (" + service + ")", Protocol: service,
-		Host: n.Address, Port: svc.PublicPort, Username: d.Username, Password: pw,
-	}, 5*time.Minute)
+	targets := s.guacTargets(d, nodes)
+	if own, err := s.store.ListDevices(ctx, p.User.ID); err == nil {
+		for _, o := range own {
+			if o.ID != d.ID {
+				targets = append(targets, s.guacTargets(o, nodes)...)
+			}
+		}
+	}
+	return guac.LoginURL(s.cfg.GuacamoleURL, s.cfg.GuacamoleJSONSecret, p.User.Username, targets,
+		guacConnectionName(d, service), 5*time.Minute, s.cfg.GuacamoleLoginHelper)
 }
 
 // ---------------------------------------------------------------- node snapshots

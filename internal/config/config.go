@@ -3,6 +3,8 @@ package config
 
 import (
 	"fmt"
+	"net/netip"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -46,6 +48,14 @@ type Config struct {
 	GuacamoleURL        string
 	GuacamoleJSONSecret string
 	GuacamoleUpstream   string // e.g. http://127.0.0.1:8081
+	// GuacamoleLoginHelper routes Guacamole logins through a small page the
+	// gateway serves on the Guacamole host (fresh session per login). Only
+	// valid when the gateway serves TOSSBOX_GUACAMOLE_URL's host.
+	GuacamoleLoginHelper bool
+
+	// TrustedProxies are reverse proxies whose X-Forwarded-For header is
+	// believed (client IPs for login rate limiting, audit and allowlists).
+	TrustedProxies []netip.Prefix
 
 	TemplateSources []string
 
@@ -117,6 +127,29 @@ func Load() (*Config, error) {
 	}
 	if c.GuacamoleURL != "" && len(c.GuacamoleJSONSecret) != 32 {
 		return nil, fmt.Errorf("TOSSBOX_GUACAMOLE_JSON_SECRET must be 32 hex characters when TOSSBOX_GUACAMOLE_URL is set")
+	}
+	switch h := env("TOSSBOX_GUACAMOLE_LOGIN_HELPER", "auto"); h {
+	case "true", "false":
+		c.GuacamoleLoginHelper = h == "true"
+	case "auto":
+		// With ACME the gateway itself terminates TLS for the Guacamole
+		// host, so it certainly serves the helper page.
+		if u, err := url.Parse(c.GuacamoleURL); err == nil && c.GuacamoleURL != "" {
+			c.GuacamoleLoginHelper = strings.EqualFold(u.Hostname(), c.GuacamoleHost()) && c.ACMEEmail != ""
+		}
+	default:
+		return nil, fmt.Errorf("TOSSBOX_GUACAMOLE_LOGIN_HELPER: want auto, true or false, got %q", h)
+	}
+	for _, e := range list(env("TOSSBOX_TRUSTED_PROXIES", "")) {
+		p, err := netip.ParsePrefix(e)
+		if err != nil {
+			a, err2 := netip.ParseAddr(e)
+			if err2 != nil {
+				return nil, fmt.Errorf("TOSSBOX_TRUSTED_PROXIES: %q is not an IP or CIDR", e)
+			}
+			p = netip.PrefixFrom(a.Unmap(), a.Unmap().BitLen())
+		}
+		c.TrustedProxies = append(c.TrustedProxies, p.Masked())
 	}
 	return c, nil
 }

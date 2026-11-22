@@ -134,7 +134,7 @@ func run() error {
 	gwCfg := gateway.Config{
 		HTTPListen: cfg.GatewayHTTPListen, HTTPSListen: cfg.GatewayHTTPSListen,
 		FallbackHTTP: cfg.GatewayFallbackHTTP, FallbackHTTPS: cfg.GatewayFallbackHTTPS,
-		RateLimit:     cfg.GatewayRateLimit,
+		RateLimit: cfg.GatewayRateLimit, TrustedProxies: cfg.TrustedProxies,
 		DashboardHost: cfg.DashboardHost, DashboardHandler: handler,
 	}
 	if cfg.GuacamoleEnabled() {

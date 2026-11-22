@@ -179,6 +179,9 @@ func (s *Service) CreateDevice(ctx context.Context, p Principal, req CreateDevic
 	if req.Exposure == model.ExposurePublic && slices.Contains(services, "vnc") && !st.PublicVNCAllowed {
 		return nil, model.Errf(model.CodeForbidden, "public VNC is disabled by the administrator; use tailscale exposure or Guacamole")
 	}
+	if req.Exposure == model.ExposurePublic && slices.Contains(services, "adb") && !st.PublicADBAllowed {
+		return nil, model.Errf(model.CodeForbidden, "public ADB is disabled by the administrator (adb has no authentication); use tailscale or none exposure")
+	}
 	allowlist, err := normalizeAllowlist(req.Allowlist)
 	if err != nil {
 		return nil, err
@@ -309,7 +312,7 @@ func (s *Service) CreateDevice(ctx context.Context, p Principal, req CreateDevic
 		Name: req.Name, Hostname: host, Res: resources, Power: req.Power, State: "pending",
 		StatusMessage: "Scheduled", Exposure: req.Exposure, Allowlist: allowlist,
 		LicenseMode: lic.Mode, LicensePool: licensePool, LicenseKeyEnc: keyEnc,
-		Username: tpl.DefaultUser, PasswordEnc: pwEnc, SSHKeys: u.SSHKeys, Params: req.Params,
+		Username: tpl.DefaultUser, PasswordEnc: pwEnc, SSHKeys: u.SSHKeys, ADBKeys: u.ADBKeys, Params: req.Params,
 		TTLHours: req.TTLHours, ExpiresAt: expires, Revision: 1,
 	}
 	for i, svc := range services {
@@ -607,6 +610,7 @@ func (s *Service) spec(d *store.Device) (*agentv1.DeviceSpec, error) {
 			RamMb: d.Res.RAMMB, StorageGb: d.Res.StorageGB,
 		},
 		SshAuthorizedKeys: d.SSHKeys,
+		AdbAuthorizedKeys: d.ADBKeys,
 		Params:            d.Params,
 		Revision:          d.Revision,
 		Power:             agentv1.PowerState_POWER_STATE_RUNNING,

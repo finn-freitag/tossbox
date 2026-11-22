@@ -71,7 +71,9 @@ TOSSBOX_GUACAMOLE_JSON_SECRET=$(openssl rand -hex 16)
 docker compose --profile guacamole up -d
 ```
 
-The gateway serves `guacamole.<base domain>` (TLS via ACME when enabled), and each device gets an **Open in Guacamole** button. The dashboard signs a short-lived login for exactly that connection; Guacamole needs no user database. guacd connects to the node address directly.
+The gateway serves `guacamole.<base domain>` (TLS via ACME when enabled), and each device gets an **Open in Guacamole** button. The dashboard signs a short-lived login that opens the device's connection directly and also carries the user's other devices, so several Guacamole tabs for different devices work side by side. Guacamole needs no user database. guacd connects to the node address directly.
+
+When the gateway serves the Guacamole host, logins go through a small page on that host (`/.tossbox/guacamole-login`) that starts a fresh Guacamole session for each login. This is on automatically with ACME. If another reverse proxy terminates TLS and forwards the Guacamole host to the gateway, set `TOSSBOX_GUACAMOLE_LOGIN_HELPER=true`. Leave it off if your proxy sends the Guacamole host straight to the Guacamole container.
 
 ## Configuration reference
 
@@ -107,6 +109,8 @@ All configuration uses environment variables (see [.env.example](.env.example)).
 | `TOSSBOX_GUACAMOLE_URL` | | Public Guacamole URL (enables the integration) |
 | `TOSSBOX_GUACAMOLE_JSON_SECRET` | | 32 hex chars, shared with Guacamole's `JSON_SECRET_KEY` |
 | `TOSSBOX_GUACAMOLE_UPSTREAM` | `http://127.0.0.1:8081` | Where the gateway reaches the Guacamole container |
+| `TOSSBOX_GUACAMOLE_LOGIN_HELPER` | `auto` | `true` when the gateway serves the Guacamole host behind another proxy (`auto` = on with ACME) |
+| `TOSSBOX_TRUSTED_PROXIES` | | Comma separated IPs/CIDRs of reverse proxies in front of Tossbox (e.g. `127.0.0.1,172.16.0.0/12`). Their `X-Forwarded-For` is used for login rate limiting, audit IPs and HTTP allowlists |
 | `TOSSBOX_LOG_LEVEL` / `_FORMAT` | `info` / `text` | `debug`…`error` / `text`, `json` |
 
 Runtime settings such as overcommit, default services, password length, default TTL and public VNC are edited by admins in the UI (**Settings**) and stored in the database.
@@ -114,6 +118,9 @@ Runtime settings such as overcommit, default services, password length, default 
 ## Security notes
 
 - Passwords are generated per device (≥ 20 characters, letters, digits and `-_.`), shown only to the owner and admins, and stored encrypted.
+- Behind a reverse proxy, set `TOSSBOX_TRUSTED_PROXIES`. Otherwise every request seems to come from the proxy: failed logins from anyone then lock out everyone for 10 minutes, and HTTP allowlists see the proxy's address.
+- adb on redroid gives a root shell in a privileged container. Android devices therefore require adb authentication: users add their `~/.android/adbkey.pub` under **Profile → ADB keys**, and only those keys can connect to devices they create afterwards. Public ADB exposure is still off by default (**Settings → Allow public ADB**); prefer Tailscale exposure or an allowlist.
+- Node agents only accept device port connections from the dashboard and private networks by default (`allowed_sources` in node.yaml), so the gateway's allowlists and rate limits can't be bypassed from the internet.
 - VNC is off by default. Classic VNC auth only uses 8 password characters and isn't encrypted, so prefer Guacamole, an SSH tunnel or Tailscale exposure.
 - The gateway rate-limits new connections per source IP on device ports. Devices can have an IP allowlist.
 - API tokens (`tbt_…`) and sessions are stored as hashes. Cookie-authenticated writes require the `X-Tossbox-CSRF: 1` header.

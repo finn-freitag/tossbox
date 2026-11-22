@@ -7,12 +7,12 @@ import (
 	"errors"
 	"io"
 	"log/slog"
-	"net"
 	"net/http"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/finn-freitag/tossbox/internal/clientip"
 	"github.com/finn-freitag/tossbox/internal/core"
 	"github.com/finn-freitag/tossbox/internal/model"
 	"github.com/finn-freitag/tossbox/internal/secrets"
@@ -64,6 +64,7 @@ func (s *Server) Handler() http.Handler {
 	h("POST /api/auth/logout", s.logout)
 	auth("GET /api/auth/me", s.me)
 	auth("PUT /api/me/ssh-keys", s.setSSHKeys)
+	auth("PUT /api/me/adb-keys", s.setADBKeys)
 	auth("POST /api/me/password", s.changePassword)
 	auth("GET /api/me/tokens", s.listTokens)
 	auth("POST /api/me/tokens", s.createToken)
@@ -105,15 +106,25 @@ func (s *Server) Handler() http.Handler {
 	if s.ui != nil {
 		mux.Handle("/", s.ui)
 	}
-	return securityHeaders(mux)
+	return securityHeaders(mux, s.core.Config().SecureCookies)
 }
 
-func securityHeaders(next http.Handler) http.Handler {
+// contentSecurityPolicy only allows the UI's own scripts and API calls.
+const contentSecurityPolicy = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; " +
+	"img-src 'self' data:; font-src 'self' data:; connect-src 'self'; object-src 'none'; " +
+	"base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
+
+func securityHeaders(next http.Handler, https bool) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		h := w.Header()
 		h.Set("X-Content-Type-Options", "nosniff")
 		h.Set("X-Frame-Options", "DENY")
 		h.Set("Referrer-Policy", "same-origin")
+		h.Set("Content-Security-Policy", contentSecurityPolicy)
+		h.Set("Cross-Origin-Opener-Policy", "same-origin")
+		if https || r.TLS != nil {
+			h.Set("Strict-Transport-Security", "max-age=31536000")
+		}
 		next.ServeHTTP(w, r)
 	})
 }
@@ -193,12 +204,13 @@ func decode(r *http.Request, v any) error {
 	return nil
 }
 
-func clientIP(r *http.Request) string {
-	host, _, err := net.SplitHostPort(r.RemoteAddr)
-	if err != nil {
-		return r.RemoteAddr
+// clientIP is the caller's address; X-Forwarded-For is only believed from
+// TOSSBOX_TRUSTED_PROXIES.
+func (s *Server) clientIP(r *http.Request) string {
+	if a := clientip.From(r, s.core.Config().TrustedProxies); a.IsValid() {
+		return a.String()
 	}
-	return host
+	return r.RemoteAddr
 }
 
 func (s *Server) healthz(w http.ResponseWriter, r *http.Request) {
@@ -229,14 +241,24 @@ func (s *Server) info(w http.ResponseWriter, r *http.Request) error {
 
 // loginLimiter allows 10 failed logins per IP per 10 minutes.
 type loginLimiter struct {
-	mu sync.Mutex
-	m  map[string][]time.Time
+	mu     sync.Mutex
+	m      map[string][]time.Time
+	lastGC time.Time
 }
 
 func (l *loginLimiter) blocked(ip string) bool {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	cut := time.Now().Add(-10 * time.Minute)
+	// Forget stale entries of other IPs now and then (bounded memory).
+	if time.Since(l.lastGC) > 10*time.Minute {
+		for k, ts := range l.m {
+			if len(ts) == 0 || ts[len(ts)-1].Before(cut) {
+				delete(l.m, k)
+			}
+		}
+		l.lastGC = time.Now()
+	}
 	var keep []time.Time
 	for _, t := range l.m[ip] {
 		if t.After(cut) {
@@ -261,7 +283,7 @@ func (l *loginLimiter) fail(ip string) {
 var dummyHash, _ = core.HashPassword("tossbox-dummy-password")
 
 func (s *Server) loginHandler(w http.ResponseWriter, r *http.Request) error {
-	ip := clientIP(r)
+	ip := s.clientIP(r)
 	if s.login.blocked(ip) {
 		return model.Errf(model.CodeUnauthorized, "too many failed logins, try again later")
 	}
@@ -328,6 +350,20 @@ func (s *Server) setSSHKeys(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	v, err := s.core.SetSSHKeys(r.Context(), principal(r), req.SSHKeys)
+	if err != nil {
+		return err
+	}
+	return writeJSON(w, http.StatusOK, v)
+}
+
+func (s *Server) setADBKeys(w http.ResponseWriter, r *http.Request) error {
+	var req struct {
+		ADBKeys []string `json:"adb_keys"`
+	}
+	if err := decode(r, &req); err != nil {
+		return err
+	}
+	v, err := s.core.SetADBKeys(r.Context(), principal(r), req.ADBKeys)
 	if err != nil {
 		return err
 	}

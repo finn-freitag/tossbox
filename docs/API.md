@@ -43,6 +43,7 @@ No auth.
   "username": "finn",
   "role": "admin",
   "ssh_keys": ["ssh-ed25519 AAAA... finn@laptop"],
+  "adb_keys": [],
   "quota": { ...Quota },
   "usage": { ...Usage }
 }
@@ -50,6 +51,9 @@ No auth.
 
 ### `PUT /api/me/ssh-keys`
 `{"ssh_keys": ["ssh-ed25519 ..."]}` → updated user. These keys are added to every new device of the user.
+
+### `PUT /api/me/adb-keys`
+`{"adb_keys": ["QAAAA... you@laptop"]}` → updated user. adb public keys (content of `~/.android/adbkey.pub`), copied to every new Android device of the user. Devices with adb authentication only accept these keys.
 
 ### `POST /api/me/password`
 `{"current_password": "...", "new_password": "..."}` → `204`.
@@ -331,7 +335,8 @@ Any subset of `{"password": "...", "role": "...", "quota": {...}}` → User.
   "password_length": 24,
   "default_ttl_hours": 0,
   "api_requires_ttl": true,
-  "public_vnc_allowed": true
+  "public_vnc_allowed": true,
+  "public_adb_allowed": false
 }
 ```
 ### `PUT /api/settings`

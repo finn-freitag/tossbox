@@ -26,6 +26,7 @@ export function ProfilePage() {
       </div>
       <div className="stack">
         <SshKeys initial={me.data.ssh_keys} />
+        <AdbKeys initial={me.data.adb_keys ?? []} />
         <Tokens />
         <Password />
       </div>
@@ -61,6 +62,47 @@ function SshKeys({ initial }: { initial: string[] }) {
       <p className="muted small">These public keys are added to the default user of every new device you create.</p>
       <Field label="Public keys (one per line)" error={bad ? `Doesn't look like an SSH public key: ${bad.slice(0, 40)}…` : undefined}>
         <textarea rows={4} className="mono" value={text} onChange={(e) => setText(e.target.value)} placeholder="ssh-ed25519 AAAA… you@laptop" spellCheck={false} />
+      </Field>
+      <div>
+        <button className="btn btn-primary" disabled={busy || !!bad} onClick={save}>
+          Save keys
+        </button>
+      </div>
+    </section>
+  )
+}
+
+function AdbKeys({ initial }: { initial: string[] }) {
+  const [text, setText] = useState(initial.join('\n'))
+  const [busy, setBusy] = useState(false)
+  const qc = useQueryClient()
+  const toast = useToast()
+  const keys = text
+    .split('\n')
+    .map((s) => s.trim())
+    .filter(Boolean)
+  const bad = keys.find((k) => !/^[A-Za-z0-9+/]{300,}={0,2}(\s.*)?$/.test(k))
+  const save = async () => {
+    setBusy(true)
+    try {
+      const u = await api.setAdbKeys(keys)
+      qc.setQueryData(qk.me, u)
+      toast('ADB keys saved')
+    } catch (e) {
+      toast(errorMessage(e), 'error')
+    } finally {
+      setBusy(false)
+    }
+  }
+  return (
+    <section className="card section">
+      <h2 className="section-title">ADB keys</h2>
+      <p className="muted small">
+        Android devices require adb authentication: only these keys can connect (copied to every new Android device you create). Paste the content of{' '}
+        <code>~/.android/adbkey.pub</code> (run <code>adb start-server</code> once to create it).
+      </p>
+      <Field label="adb public keys (one per line)" error={bad ? `Doesn't look like an adb public key: ${bad.slice(0, 40)}…` : undefined}>
+        <textarea rows={4} className="mono" value={text} onChange={(e) => setText(e.target.value)} placeholder="QAAAA… you@laptop" spellCheck={false} />
       </Field>
       <div>
         <button className="btn btn-primary" disabled={busy || !!bad} onClick={save}>

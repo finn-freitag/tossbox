@@ -2,6 +2,8 @@ package core
 
 import (
 	"context"
+	"encoding/base64"
+	"encoding/binary"
 	"errors"
 	"strings"
 	"time"
@@ -10,6 +12,7 @@ import (
 	"github.com/finn-freitag/tossbox/internal/store"
 	"github.com/google/uuid"
 	"golang.org/x/crypto/bcrypt"
+	"golang.org/x/crypto/ssh"
 )
 
 // UserView is the API representation of a user.
@@ -18,6 +21,7 @@ type UserView struct {
 	Username  string      `json:"username"`
 	Role      string      `json:"role"`
 	SSHKeys   []string    `json:"ssh_keys"`
+	ADBKeys   []string    `json:"adb_keys"`
 	Quota     model.Quota `json:"quota"`
 	Usage     model.Usage `json:"usage"`
 	CreatedAt time.Time   `json:"created_at"`
@@ -74,7 +78,7 @@ func (s *Service) UserView(ctx context.Context, u *store.User) (*UserView, error
 	if err != nil {
 		return nil, err
 	}
-	return &UserView{ID: u.ID, Username: u.Username, Role: u.Role, SSHKeys: u.SSHKeys, Quota: u.Quota.Normalize(), Usage: usage, CreatedAt: u.CreatedAt}, nil
+	return &UserView{ID: u.ID, Username: u.Username, Role: u.Role, SSHKeys: u.SSHKeys, ADBKeys: u.ADBKeys, Quota: u.Quota.Normalize(), Usage: usage, CreatedAt: u.CreatedAt}, nil
 }
 
 // ListUsers returns all users (admin).
@@ -93,7 +97,7 @@ func (s *Service) ListUsers(ctx context.Context) ([]*UserView, error) {
 	}
 	out := []*UserView{}
 	for _, u := range users {
-		out = append(out, &UserView{ID: u.ID, Username: u.Username, Role: u.Role, SSHKeys: u.SSHKeys, Quota: u.Quota, Usage: usageOf(byOwner[u.ID]), CreatedAt: u.CreatedAt})
+		out = append(out, &UserView{ID: u.ID, Username: u.Username, Role: u.Role, SSHKeys: u.SSHKeys, ADBKeys: u.ADBKeys, Quota: u.Quota, Usage: usageOf(byOwner[u.ID]), CreatedAt: u.CreatedAt})
 	}
 	return out, nil
 }
@@ -255,11 +259,17 @@ func (s *Service) SetSSHKeys(ctx context.Context, p Principal, keys []string) (*
 		if k == "" {
 			continue
 		}
-		f := strings.Fields(k)
-		if len(f) < 2 || !(strings.HasPrefix(f[0], "ssh-") || strings.HasPrefix(f[0], "ecdsa-") || strings.HasPrefix(f[0], "sk-")) {
+		// Exactly one authorized_keys line: keys end up in cloud-init and
+		// Windows provisioning scripts, so no options or extra lines.
+		pub, comment, opts, rest, err := ssh.ParseAuthorizedKey([]byte(k))
+		if err != nil || len(opts) > 0 || len(rest) > 0 || strings.ContainsAny(k, "\r\n") {
 			return nil, model.Errf(model.CodeValidation, "invalid SSH public key: %.30s…", k)
 		}
-		clean = append(clean, k)
+		line := strings.TrimSpace(string(ssh.MarshalAuthorizedKey(pub)))
+		if comment = strings.TrimSpace(comment); comment != "" {
+			line += " " + comment
+		}
+		clean = append(clean, line)
 	}
 	u := p.User
 	u.SSHKeys = clean
@@ -267,6 +277,53 @@ func (s *Service) SetSSHKeys(ctx context.Context, p Principal, keys []string) (*
 		return nil, err
 	}
 	return s.UserView(ctx, u)
+}
+
+// SetADBKeys replaces the caller's adb public keys (content of
+// ~/.android/adbkey.pub). They are copied to Android devices created later.
+func (s *Service) SetADBKeys(ctx context.Context, p Principal, keys []string) (*UserView, error) {
+	clean := []string{}
+	for _, k := range keys {
+		k = strings.TrimSpace(k)
+		if k == "" {
+			continue
+		}
+		norm, err := parseADBKey(k)
+		if err != nil {
+			return nil, model.Errf(model.CodeValidation, "invalid adb public key (expected the content of ~/.android/adbkey.pub): %.30s…", k)
+		}
+		clean = append(clean, norm)
+	}
+	if len(clean) > 20 {
+		return nil, model.Errf(model.CodeValidation, "at most 20 adb keys")
+	}
+	u := p.User
+	u.ADBKeys = clean
+	if err := s.store.UpdateUser(ctx, u); err != nil {
+		return nil, err
+	}
+	return s.UserView(ctx, u)
+}
+
+// parseADBKey validates "<base64 Android RSA public key> [comment]": the
+// decoded key is (modulus words, n0inv, modulus, rr, exponent) as uint32s.
+func parseADBKey(line string) (string, error) {
+	if strings.ContainsAny(line, "\r\n\x00") {
+		return "", errors.New("multi-line key")
+	}
+	b64, comment, _ := strings.Cut(line, " ")
+	raw, err := base64.StdEncoding.DecodeString(b64)
+	if err != nil || len(raw) < 12 {
+		return "", errors.New("not base64")
+	}
+	words := int(binary.LittleEndian.Uint32(raw))
+	if words < 64 || words > 128 || len(raw) != 12+8*words {
+		return "", errors.New("unsupported key size")
+	}
+	if comment = strings.TrimSpace(comment); comment != "" {
+		return b64 + " " + comment, nil
+	}
+	return b64, nil
 }
 
 // ChangePassword changes the caller's password and ends their other sessions.

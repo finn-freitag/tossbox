@@ -63,6 +63,7 @@ export interface User {
   username: string
   role: Role
   ssh_keys: string[]
+  adb_keys: string[]
   quota: Quota
   usage: Usage
   created_at?: string
@@ -263,6 +264,7 @@ export interface Settings {
   default_ttl_hours: number
   api_requires_ttl: boolean
   public_vnc_allowed: boolean
+  public_adb_allowed: boolean
 }
 
 export interface CreateUserRequest {

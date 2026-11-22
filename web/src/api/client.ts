@@ -81,6 +81,7 @@ export const api = {
   logout: () => request<void>('POST', '/auth/logout'),
   me: () => request<User>('GET', '/auth/me'),
   setSshKeys: (ssh_keys: string[]) => request<User>('PUT', '/me/ssh-keys', { ssh_keys }),
+  setAdbKeys: (adb_keys: string[]) => request<User>('PUT', '/me/adb-keys', { adb_keys }),
   changePassword: (current_password: string, new_password: string) =>
     request<void>('POST', '/me/password', { current_password, new_password }),
   tokens: () => request<ApiToken[]>('GET', '/me/tokens'),

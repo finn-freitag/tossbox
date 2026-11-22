@@ -27,6 +27,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/finn-freitag/tossbox/internal/clientip"
+	"github.com/finn-freitag/tossbox/internal/guac"
 	"golang.org/x/crypto/acme"
 	"golang.org/x/crypto/acme/autocert"
 )
@@ -55,6 +57,8 @@ type Config struct {
 	FallbackHTTP  string
 	FallbackHTTPS string
 	RateLimit     int // per IP per minute, 0 = off
+	// TrustedProxies may set X-Forwarded-For on :80 (for device allowlists).
+	TrustedProxies []netip.Prefix
 
 	DashboardHost    string
 	DashboardHandler http.Handler
@@ -365,8 +369,7 @@ func (g *Gateway) serveHTTP(w http.ResponseWriter, r *http.Request) {
 	route, ok := g.httpByFQ[host]
 	g.mu.RUnlock()
 	if ok && route.HTTPTarget != "" {
-		ip, _ := netip.ParseAddrPort(r.RemoteAddr)
-		if !allowed(route.Allowlist, ip.Addr().Unmap()) {
+		if !allowed(route.Allowlist, clientip.From(r, g.cfg.TrustedProxies)) {
 			http.Error(w, "forbidden", http.StatusForbidden)
 			return
 		}
@@ -398,6 +401,15 @@ func newReverseProxy(target *url.URL, keepHost bool) *httputil.ReverseProxy {
 }
 
 func (g *Gateway) serveGuacamole(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path == guac.LoginPath {
+		h := w.Header()
+		h.Set("Content-Type", "text/html; charset=utf-8")
+		h.Set("Cache-Control", "no-store")
+		h.Set("Referrer-Policy", "no-referrer")
+		h.Set("X-Content-Type-Options", "nosniff")
+		w.Write(guac.HelperPage(g.cfg.GuacamolePath))
+		return
+	}
 	if r.URL.Path == "/" && g.cfg.GuacamolePath != "" && g.cfg.GuacamolePath != "/" {
 		http.Redirect(w, r, strings.TrimRight(g.cfg.GuacamolePath, "/")+"/", http.StatusFound)
 		return

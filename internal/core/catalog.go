@@ -239,6 +239,7 @@ func (s *Service) CreateOptionsFor(ctx context.Context, p Principal) (*CreateOpt
 			o.Warning = "VNC is unencrypted; prefer Guacamole, an SSH tunnel or Tailscale"
 		case "adb":
 			o.Label = "ADB"
+			o.Warning = "adb has no authentication: anyone who can reach the port gets a root shell; use an allowlist or Tailscale"
 		case "http":
 			o.Label = "HTTP (port 80)"
 		case "https":

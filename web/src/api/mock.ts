@@ -28,6 +28,7 @@ const me: User = {
   username: 'finn',
   role: 'admin',
   ssh_keys: ['ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExampleKeyOnly finn@laptop'],
+  adb_keys: [],
   quota: { ...emptyQuota(), max_machines: 10, max_ram_mb: 65536 },
   usage: { machines: 0, vcpus: 0, ram_mb: 0, storage_gb: 0, phones: 0 },
   created_at: now(),
@@ -40,6 +41,7 @@ const users: User[] = [
     username: 'ci-bot',
     role: 'user',
     ssh_keys: [],
+    adb_keys: [],
     quota: { ...emptyQuota(), max_machines: 3, allowed_drivers: ['libvirt'], allowed_exposures: ['none', 'tailscale'], max_ttl_hours: 24 },
     usage: { machines: 0, vcpus: 0, ram_mb: 0, storage_gb: 0, phones: 0 },
     created_at: now(),
@@ -145,6 +147,7 @@ let settings: Settings = {
   default_ttl_hours: 0,
   api_requires_ttl: true,
   public_vnc_allowed: true,
+  public_adb_allowed: false,
 }
 
 const tokens: ApiToken[] = [{ id: 'tk-1', name: 'gitlab-ci', created_at: now(), last_used_at: null, expires_at: null }]
@@ -277,6 +280,10 @@ export async function mockRequest<T>(method: string, fullPath: string, body?: un
     me.ssh_keys = b.ssh_keys as string[]
     return r(me)
   }
+  if (path === '/me/adb-keys') {
+    me.adb_keys = b.adb_keys as string[]
+    return r(me)
+  }
   if (path === '/me/password') return undefined as T
   if (path === '/me/tokens' && method === 'GET') return r(tokens)
   if (path === '/me/tokens' && method === 'POST') {
@@ -404,6 +411,7 @@ export async function mockRequest<T>(method: string, fullPath: string, body?: un
       username: String(b.username),
       role: b.role as User['role'],
       ssh_keys: [],
+      adb_keys: [],
       quota: b.quota as User['quota'],
       usage: { machines: 0, vcpus: 0, ram_mb: 0, storage_gb: 0, phones: 0 },
       created_at: now(),

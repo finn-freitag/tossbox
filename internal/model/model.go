@@ -75,6 +75,9 @@ type Settings struct {
 	DefaultTTLHours         int      `json:"default_ttl_hours"`
 	APIRequiresTTL          bool     `json:"api_requires_ttl"`
 	PublicVNCAllowed        bool     `json:"public_vnc_allowed"`
+	// PublicADBAllowed: adb has no authentication and gives a root shell on
+	// redroid (a privileged container), so it is off by default.
+	PublicADBAllowed bool `json:"public_adb_allowed"`
 }
 
 // DefaultSettings are used until an admin changes them.
@@ -91,6 +94,7 @@ func DefaultSettings() Settings {
 		DefaultTTLHours:         0,
 		APIRequiresTTL:          true,
 		PublicVNCAllowed:        true,
+		PublicADBAllowed:        false,
 	}
 }
 

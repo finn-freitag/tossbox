@@ -44,6 +44,7 @@ type Device struct {
 	Username       string
 	PasswordEnc    string
 	SSHKeys        []string
+	ADBKeys        []string
 	Params         map[string]string
 	TTLHours       int
 	ExpiresAt      *time.Time
@@ -68,7 +69,7 @@ const deviceSelect = `SELECT d.id, d.owner_id, u.username, coalesce(d.node_id::t
 	d.template_family, d.template_spec, d.name, d.hostname, d.vcpus, d.cpu_cap_percent, d.ram_mb, d.storage_gb, d.power,
 	d.state, d.ready, d.status_message, d.internal_ip, d.storage_used_mb, d.exposure, d.allowlist, d.license_mode,
 	coalesce(l.pool, ''), d.license_key_enc, d.username, d.password_enc, d.ssh_keys, d.params, d.ttl_hours, d.expires_at,
-	d.revision, d.deleting, d.created_at, d.updated_at,
+	d.revision, d.deleting, d.created_at, d.updated_at, d.adb_keys,
 	coalesce((SELECT json_agg(json_build_array(s.name, s.internal_port, s.public_port) ORDER BY s.public_port)
 	          FROM device_services s WHERE s.device_id = d.id), '[]')
 	FROM devices d JOIN users u ON u.id = d.owner_id LEFT JOIN license_leases l ON l.device_id = d.id`
@@ -80,7 +81,7 @@ func scanDevice(row interface{ Scan(...any) error }) (*Device, error) {
 		&d.TemplateFamily, &d.TemplateSpec, &d.Name, &d.Hostname, &d.Res.VCPUs, &d.Res.CPUCapPercent, &d.Res.RAMMB, &d.Res.StorageGB, &d.Power,
 		&d.State, &d.Ready, &d.StatusMessage, &d.InternalIP, &d.StorageUsedMB, &d.Exposure, &d.Allowlist, &d.LicenseMode,
 		&d.LicensePool, &d.LicenseKeyEnc, &d.Username, &d.PasswordEnc, &d.SSHKeys, &d.Params, &d.TTLHours, &d.ExpiresAt,
-		&d.Revision, &d.Deleting, &d.CreatedAt, &d.UpdatedAt, &svcs)
+		&d.Revision, &d.Deleting, &d.CreatedAt, &d.UpdatedAt, &d.ADBKeys, &svcs)
 	if err != nil {
 		return nil, mapErr(err)
 	}
@@ -180,17 +181,20 @@ func (s *Store) InsertDevice(ctx context.Context, d *Device) error {
 		if d.SSHKeys == nil {
 			d.SSHKeys = []string{}
 		}
+		if d.ADBKeys == nil {
+			d.ADBKeys = []string{}
+		}
 		if d.Params == nil {
 			d.Params = map[string]string{}
 		}
 		err := tx.QueryRow(ctx, `INSERT INTO devices (id, owner_id, node_id, driver, template_id, template_name, template_family,
 			template_spec, name, hostname, vcpus, cpu_cap_percent, ram_mb, storage_gb, power, state, status_message, exposure, allowlist,
-			license_mode, license_key_enc, username, password_enc, ssh_keys, params, ttl_hours, expires_at, revision)
-			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28)
+			license_mode, license_key_enc, username, password_enc, ssh_keys, params, ttl_hours, expires_at, revision, adb_keys)
+			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29)
 			RETURNING created_at, updated_at`,
 			d.ID, d.OwnerID, node, d.Driver, d.TemplateID, d.TemplateName, d.TemplateFamily, d.TemplateSpec, d.Name, d.Hostname,
 			d.Res.VCPUs, d.Res.CPUCapPercent, d.Res.RAMMB, d.Res.StorageGB, d.Power, d.State, d.StatusMessage, d.Exposure, d.Allowlist,
-			d.LicenseMode, d.LicenseKeyEnc, d.Username, d.PasswordEnc, d.SSHKeys, d.Params, d.TTLHours, d.ExpiresAt, d.Revision,
+			d.LicenseMode, d.LicenseKeyEnc, d.Username, d.PasswordEnc, d.SSHKeys, d.Params, d.TTLHours, d.ExpiresAt, d.Revision, d.ADBKeys,
 		).Scan(&d.CreatedAt, &d.UpdatedAt)
 		if err != nil {
 			return mapErr(err)

@@ -112,6 +112,7 @@ function SettingsForm({ initial }: { initial: Settings }) {
           </Field>
           <Toggle label="API-created devices require a TTL" hint="Devices created with an API token must set ttl_hours." checked={s.api_requires_ttl} onChange={(v) => set('api_requires_ttl', v)} />
           <Toggle label="Allow public VNC" hint="VNC is unencrypted. When off, VNC can only be exposed via Tailscale or internally." checked={s.public_vnc_allowed} onChange={(v) => set('public_vnc_allowed', v)} />
+          <Toggle label="Allow public ADB" hint="adb has no authentication and gives a root shell on Android devices. When off, ADB can only be exposed via Tailscale or internally." checked={s.public_adb_allowed} onChange={(v) => set('public_adb_allowed', v)} />
         </section>
       </div>
     </div>

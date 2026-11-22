@@ -78,6 +78,8 @@ export function DeviceActions({ device, onDeleted, compact }: { device: Device; 
   const openGuac = async () => {
     // Open the window synchronously (popup blockers), then point it at the URL.
     const w = window.open('', '_blank')
+    // Guacamole must not be able to navigate the dashboard tab.
+    if (w) w.opener = null
     setGuacBusy(true)
     try {
       const { url } = await api.guacamole(device.id, guacService ?? undefined)
