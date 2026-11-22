@@ -1,7 +1,8 @@
 // Types mirroring tossbox/docs/API.md (the contract). Keep in sync.
 
 export type Role = 'admin' | 'user'
-export type Family = 'linux' | 'windows' | 'android' | 'macos' | 'ios'
+export type Family = 'linux' | 'windows' | 'android' | 'macos' | 'ios' | 'chromeos' | 'browser'
+export type NetworkPolicy = 'internet' | 'offline'
 export type ServiceName = 'ssh' | 'rdp' | 'vnc' | 'adb' | 'http' | 'https'
 export type Exposure = 'public' | 'tailscale' | 'none'
 export type Power = 'running' | 'stopped'
@@ -36,6 +37,7 @@ export interface Quota {
   max_ram_mb: number
   max_storage_gb: number
   max_phones: number
+  max_gpus: number
   allowed_drivers: string[]
   allowed_templates: string[]
   allowed_license_pools: string[]
@@ -49,6 +51,7 @@ export interface Usage {
   ram_mb: number
   storage_gb: number
   phones: number
+  gpus: number
 }
 
 export interface Resources {
@@ -98,6 +101,8 @@ export interface Template {
   default_resources: Resources
   license: boolean
   source: string
+  /** "required", "recommended" or "" */
+  gpu?: string
 }
 
 export interface LicensePoolSummary {
@@ -144,6 +149,8 @@ export interface CreateOptions {
   default_ttl_hours: number
   max_ttl_hours: number
   service_catalog: ServiceCatalogEntry[]
+  /** Optional features per driver, reported by online nodes. */
+  driver_features?: Record<string, { network_policies: NetworkPolicy[]; gpu: boolean }>
 }
 
 export interface DeviceService {
@@ -179,6 +186,8 @@ export interface Device {
   created_at: string
   updated_at: string
   params: Record<string, string>
+  network_policy: NetworkPolicy
+  gpu: boolean
 }
 
 export interface CreateDeviceRequest {
@@ -194,6 +203,8 @@ export interface CreateDeviceRequest {
   license?: { mode: LicenseMode; pool?: string; user_key?: string }
   power?: Power
   params?: Record<string, string>
+  network_policy?: NetworkPolicy
+  gpu?: boolean
 }
 
 export interface PatchDeviceRequest {
@@ -295,6 +306,7 @@ export const emptyQuota = (): Quota => ({
   max_ram_mb: 0,
   max_storage_gb: 0,
   max_phones: 0,
+  max_gpus: 0,
   allowed_drivers: [],
   allowed_templates: [],
   allowed_license_pools: [],

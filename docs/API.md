@@ -79,6 +79,7 @@ No auth.
   "max_ram_mb": 32768,
   "max_storage_gb": 500,
   "max_phones": 1,
+  "max_gpus": 0,
   "allowed_drivers": ["libvirt", "lxc"],
   "allowed_templates": [],
   "allowed_license_pools": ["win-retail-pro"],
@@ -89,7 +90,7 @@ No auth.
 
 ### Usage
 ```json
-{ "machines": 2, "vcpus": 6, "ram_mb": 12288, "storage_gb": 214, "phones": 0 }
+{ "machines": 2, "vcpus": 6, "ram_mb": 12288, "storage_gb": 214, "phones": 0, "gpus": 0 }
 ```
 
 ### Resources
@@ -152,6 +153,7 @@ Everything the create-device form needs in one call.
   "usage": { ...Usage },
   "allowed_exposures": ["public", "tailscale", "none"],
   "driver_services": { "libvirt": ["ssh", "rdp", "vnc", "http", "https"], "lxc": ["ssh", "http", "https"] },
+  "driver_features": { "libvirt": { "network_policies": ["internet", "offline"], "gpu": true } },
   "default_ttl_hours": 0,
   "max_ttl_hours": 0,
   "service_catalog": [
@@ -210,7 +212,9 @@ Everything the create-device form needs in one call.
   "expires_at": "2026-11-23T16:00:00Z",
   "created_at": "2026-11-22T16:00:00Z",
   "updated_at": "2026-11-22T16:01:10Z",
-  "params": {}
+  "params": {},
+  "network_policy": "internet",
+  "gpu": false
 }
 ```
 - `power`: desired power, `"running" | "stopped"` (the on/off switch).
@@ -234,10 +238,14 @@ Own devices; admins get all devices, and can filter with `?owner=<user id>` or `
   "ttl_hours": 24,
   "license": { "mode": "pool", "pool": "win-retail-pro", "user_key": "" },
   "power": "running",
-  "params": {}
+  "params": {},
+  "network_policy": "internet",
+  "gpu": false
 }
 ```
 - `driver` / `node_id` empty = chosen by the scheduler.
+- `network_policy`: `internet` (default; private networks blocked by the node firewall) or `offline` (no outbound traffic, no DNS; the device stays reachable through its services). Only nodes whose driver supports the policy are used.
+- `gpu`: share the node's GPU (VirGL, SR-IOV VF or render node, depending on the driver). Omitted = the template's default (`gpu` param `required`/`recommended`). Counts against `max_gpus`.
 - `services` omitted = template default services. Services not supported by template **and** driver → `400 validation`.
 - `power` defaults to `"running"`.
 - `ttl_hours`: hours counted from creation (`expires_at = created_at + ttl_hours`); `0` = no expiry. The same applies to `PATCH`.

@@ -132,6 +132,12 @@ func setup(t *testing.T) *env {
 		ID: "win11", Name: "Windows 11", Family: "windows", GuestProfile: "cloudbase-init", License: true,
 		SupportedServices: []string{"ssh", "rdp", "vnc"},
 		Images:            map[string]catalog.Image{"libvirt": {URL: "local:win11.qcow2", Format: "qcow2"}},
+	}, catalog.Template{
+		ID: "browser-test", Name: "Browser", Family: "browser", GuestProfile: "none", Readiness: "vnc", DefaultUser: "tossbox",
+		SupportedServices: []string{"vnc", "http"}, ServicePorts: map[string]int{"vnc": 5900, "http": 5800},
+		MinResources:     catalog.Resources{VCPUs: 1, RAMMB: 512},
+		DefaultResources: catalog.Resources{VCPUs: 1, RAMMB: 1024},
+		Images:           map[string]catalog.Image{"browser": {URL: "docker://jlesage/firefox", Format: "container"}},
 	})
 	svc := core.New(core.Deps{Config: cfg, Store: st, Catalog: cat, Box: box, Events: events.NewBroker(), CA: ca, Log: log})
 	if _, err := svc.EnsureAdmin(ctx, "admin", "adminpass"); err != nil {
@@ -246,7 +252,10 @@ func (a *agent) connect(addr string, devices []*agentv1.DeviceStatus) (*agentv1.
 			Arch: "x86_64", Os: "linux", HostCores: 8, HostRamMb: 32768, HostStorageGb: 1000,
 			Limits: &agentv1.NodeLimits{RamMb: 16384, CpuPercent: 70, StorageGb: 300},
 			Drivers: []*agentv1.DriverCapabilities{{Name: "libvirt", Families: []string{"linux", "windows"},
-				Services: []string{"ssh", "rdp", "vnc", "http", "https"}, Healthy: true}},
+				Services: []string{"ssh", "rdp", "vnc", "http", "https"}, Healthy: true,
+				NetworkPolicies: []string{"internet", "offline"}, GpuMode: "sriov", GpuSlots: 1},
+				{Name: "browser", Families: []string{"browser"}, Services: []string{"vnc", "http", "https"}, Healthy: true,
+					NetworkPolicies: []string{"internet", "offline"}}},
 			LicensePools: []*agentv1.LicensePoolInfo{{Name: "win-retail", Type: "retail", Total: 1}},
 		},
 		Devices: devices,
@@ -359,7 +368,7 @@ func TestEndToEnd(t *testing.T) {
 		LicensePools   []map[string]any    `json:"license_pools"`
 	}
 	e.do("GET", "/api/create-options", nil, &opts)
-	if len(opts.Templates) != 2 || len(opts.DriverServices["libvirt"]) != 5 || len(opts.LicensePools) != 1 {
+	if len(opts.Templates) != 3 || len(opts.DriverServices["libvirt"]) != 5 || len(opts.LicensePools) != 1 {
 		t.Fatalf("create options: %+v", opts)
 	}
 
@@ -546,6 +555,45 @@ func TestEndToEnd(t *testing.T) {
 	var st map[string]any
 	if code := e.do("PUT", "/api/settings", map[string]any{"overcommit_ram": true}, &st); code != 200 || st["overcommit_ram"] != true || st["password_length"] != float64(24) {
 		t.Fatalf("settings partial update: %d %v", code, st)
+	}
+
+	// --- network policy, GPU, browser devices
+	var web struct {
+		ID       string
+		Services []struct{ Name, Username, Password string }
+	}
+	var webRaw map[string]any
+	if code := e.do("POST", "/api/devices", map[string]any{"name": "web1", "template_id": "browser-test", "network_policy": "offline", "ttl_hours": 1}, &webRaw); code != 201 {
+		t.Fatalf("create browser: %d %v", code, webRaw)
+	}
+	wb, _ := json.Marshal(webRaw)
+	json.Unmarshal(wb, &web)
+	if webRaw["network_policy"] != "offline" || len(web.Services) != 1 || web.Services[0].Name != "vnc" || web.Services[0].Password == "" {
+		t.Fatalf("browser view: %v", webRaw)
+	}
+	apply = ag2.next().GetApplyDevice().GetDevice()
+	if apply.GetDriver() != "browser" || apply.GetNetworkPolicy() != "offline" || apply.GetServices()[0].GetPassword() == "" {
+		t.Fatalf("browser spec: %v", apply)
+	}
+	// The web UI of a browser device is protected by the device password too.
+	if code := e.do("POST", "/api/devices", map[string]any{"name": "web2", "template_id": "browser-test", "services": []string{"http"}, "ttl_hours": 1}, &webRaw); code != 201 {
+		t.Fatalf("create browser (http): %d", code)
+	}
+	if p := ag2.next().GetApplyDevice().GetDevice().GetServices()[0]; p.GetName() != "http" || p.GetPassword() == "" {
+		t.Fatalf("http service of a browser without password: %v", p)
+	}
+	if code := e.do("POST", "/api/devices", map[string]any{"name": "lan1", "template_id": "debian-13", "network_policy": "lan"}, nil); code != 400 {
+		t.Fatalf("unknown network policy: %d", code)
+	}
+	var gdev map[string]any
+	if code := e.do("POST", "/api/devices", map[string]any{"name": "gpu1", "template_id": "debian-13", "gpu": true, "ttl_hours": 1, "resources": map[string]any{"ram_mb": 512}}, &gdev); code != 201 || gdev["gpu"] != true {
+		t.Fatalf("create gpu device: %d %v", code, gdev)
+	}
+	if g := ag2.next().GetApplyDevice().GetDevice(); g.GetResources().GetGpus() != 1 || g.GetNetworkPolicy() != "internet" {
+		t.Fatalf("gpu spec: %v", g)
+	}
+	if code := e.do("POST", "/api/devices", map[string]any{"name": "gpu2", "template_id": "debian-13", "gpu": true, "ttl_hours": 1, "resources": map[string]any{"ram_mb": 512}}, nil); code != 503 {
+		t.Fatalf("second gpu device on a 1-slot node: %d", code)
 	}
 }
 

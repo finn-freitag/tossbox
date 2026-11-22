@@ -57,8 +57,10 @@ export function DeviceDetailPage() {
             <dt>Resources</dt>
             <dd>
               {d.resources.vcpus} vCPU{d.resources.cpu_cap_percent ? ` (cap ${d.resources.cpu_cap_percent}% of node)` : ''}, {fmtMB(d.resources.ram_mb)} RAM,{' '}
-              {d.resources.storage_gb} GB disk
+              {d.resources.storage_gb} GB disk{d.gpu ? ', GPU' : ''}
             </dd>
+            <dt>Network</dt>
+            <dd>{d.network_policy === 'offline' ? 'offline (no outbound traffic)' : 'internet (no access to private networks)'}</dd>
             <dt>Internal IP</dt>
             <dd>{d.internal_ip || '—'}</dd>
             <dt>Exposure</dt>

@@ -11,5 +11,6 @@ export function Quotas({ quota, usage }: { quota: Quota; usage: Usage }) {
   add(usage.ram_mb, quota.max_ram_mb, 'RAM', fmtMB)
   add(usage.storage_gb, quota.max_storage_gb, 'GB disk')
   if (quota.max_phones || usage.phones) add(usage.phones, quota.max_phones, 'phones')
+  if (quota.max_gpus || usage.gpus) add(usage.gpus ?? 0, quota.max_gpus ?? 0, 'GPUs')
   return <p className="muted small">{parts.join(' · ')}</p>
 }

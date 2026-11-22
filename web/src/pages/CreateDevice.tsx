@@ -5,7 +5,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { AlertTriangle, ArrowLeft, Loader2 } from 'lucide-react'
 import { api } from '../api/client'
 import { qk, upsertDevice, useCreateOptions, useInfo } from '../api/hooks'
-import type { CreateOptionNode, CreateOptions, Exposure, Family, LicenseMode, Resources, ServiceName, Template } from '../api/types'
+import type { CreateOptionNode, CreateOptions, Exposure, Family, LicenseMode, NetworkPolicy, Resources, ServiceName, Template } from '../api/types'
 import { ALL_SERVICES } from '../api/types'
 import { ErrorBox, Field, Loading, OsIcon, useToast } from '../components/ui'
 import { errorMessage, familyLabel, fmtMB, slug } from '../util'
@@ -24,7 +24,7 @@ const DRIVER_SERVICES: Record<string, ServiceName[]> = {
   'usb-phone': ['adb', 'vnc'],
 }
 const COUNT_BASED = new Set(['orchard', 'usb-phone'])
-const FAMILY_ORDER: Family[] = ['linux', 'windows', 'android', 'macos', 'ios']
+const FAMILY_ORDER: Family[] = ['linux', 'windows', 'android', 'chromeos', 'browser', 'macos', 'ios']
 const TTL_PRESETS = [0, 1, 4, 8, 24, 72, 168]
 const CIDR = /^(\d{1,3}(\.\d{1,3}){3}(\/\d{1,2})?|[0-9a-fA-F:]+(\/\d{1,3})?)$/
 
@@ -52,6 +52,8 @@ function CreateForm({ opts }: { opts: CreateOptions }) {
   const [services, setServices] = useState<ServiceName[]>([])
   const [exposure, setExposure] = useState<Exposure>(opts.allowed_exposures.includes('public') ? 'public' : opts.allowed_exposures[0] ?? 'none')
   const [allowlist, setAllowlist] = useState('')
+  const [networkPolicy, setNetworkPolicy] = useState<NetworkPolicy>('internet')
+  const [gpu, setGpu] = useState(false)
   const [ttl, setTtl] = useState<number>(opts.max_ttl_hours ? Math.min(opts.default_ttl_hours || opts.max_ttl_hours, opts.max_ttl_hours) : opts.default_ttl_hours)
   const [licenseMode, setLicenseMode] = useState<LicenseMode>('none')
   const [pool, setPool] = useState('')
@@ -103,6 +105,16 @@ function CreateForm({ opts }: { opts: CreateOptions }) {
 
   const pools = node ? node.license_pools : opts.license_pools
 
+  // Optional features of the candidate drivers (any online node).
+  const features = useMemo(() => {
+    const drv = tpl ? (driver ? [driver] : tpl.available_drivers) : []
+    const f = drv.map((d) => opts.driver_features?.[d])
+    return {
+      offline: f.some((x) => x?.network_policies.includes('offline')),
+      gpu: f.some((x) => x?.gpu),
+    }
+  }, [tpl, driver, opts.driver_features])
+
   const selectTemplate = (t: Template) => {
     setTemplateId(t.id)
     setDriver('')
@@ -111,6 +123,8 @@ function CreateForm({ opts }: { opts: CreateOptions }) {
     setLicenseMode('none')
     setPool('')
     setUserKey('')
+    setNetworkPolicy('internet')
+    setGpu(t.gpu === 'required' || t.gpu === 'recommended')
   }
 
   // Reset services whenever the available set changes (template / driver switch).
@@ -143,6 +157,8 @@ function CreateForm({ opts }: { opts: CreateOptions }) {
     if (res.storage_gb < tpl.min_resources.storage_gb || res.storage_gb > limits.storage) problems.push('Storage out of range')
   }
   if (badCidr) problems.push(`Invalid allowlist entry "${badCidr}"`)
+  if (networkPolicy === 'offline' && !features.offline) problems.push('No node offers the offline network policy for this driver')
+  if (gpu && !features.gpu && tpl?.gpu !== 'recommended') problems.push('No node offers a GPU for this driver')
   if (licenseMode === 'pool' && !pool) problems.push('Choose a license pool')
   if (licenseMode === 'user_key' && !userKey.trim()) problems.push('Enter a product key')
   if (opts.max_ttl_hours > 0 && (ttl === 0 || ttl > opts.max_ttl_hours)) problems.push(`TTL must be at most ${opts.max_ttl_hours} h`)
@@ -162,6 +178,8 @@ function CreateForm({ opts }: { opts: CreateOptions }) {
         services,
         exposure,
         allowlist: allowlistEntries,
+        network_policy: networkPolicy,
+        gpu: gpu && features.gpu,
         ttl_hours: ttl,
         license: tpl.license
           ? { mode: licenseMode, pool: licenseMode === 'pool' ? pool : undefined, user_key: licenseMode === 'user_key' ? userKey.trim() : undefined }
@@ -339,6 +357,38 @@ function CreateForm({ opts }: { opts: CreateOptions }) {
                       <textarea rows={2} value={allowlist} onChange={(e) => setAllowlist(e.target.value)} placeholder="203.0.113.0/24" />
                     </Field>
                   )}
+                  <Field
+                    label="Outbound network"
+                    hint={
+                      networkPolicy === 'offline'
+                        ? 'No outbound traffic at all (no internet, no DNS). You can still connect to the device through its services.'
+                        : 'Internet access; private networks (LAN, Tailscale, the node) are blocked.'
+                    }
+                  >
+                    <div className="seg" role="radiogroup" aria-label="Outbound network">
+                      <button type="button" role="radio" aria-checked={networkPolicy === 'internet'} className={networkPolicy === 'internet' ? 'on' : ''} onClick={() => setNetworkPolicy('internet')}>
+                        internet
+                      </button>
+                      <button
+                        type="button"
+                        role="radio"
+                        aria-checked={networkPolicy === 'offline'}
+                        className={networkPolicy === 'offline' ? 'on' : ''}
+                        disabled={!features.offline}
+                        title={features.offline ? undefined : 'Not supported by the driver on any online node'}
+                        onClick={() => setNetworkPolicy('offline')}
+                      >
+                        offline
+                      </button>
+                    </div>
+                  </Field>
+                  {(features.gpu || tpl?.gpu) && (
+                    <label className="check">
+                      <input type="checkbox" checked={gpu} disabled={!features.gpu || tpl?.gpu === 'required'} onChange={(e) => setGpu(e.target.checked)} />{' '}
+                      Share the node's GPU{tpl?.gpu === 'required' ? ' (required by this template)' : tpl?.gpu === 'recommended' ? ' (recommended for this template)' : ''}
+                      {!features.gpu && <span className="muted small"> — no node offers a GPU right now</span>}
+                    </label>
+                  )}
                 </div>
               </Section>
 
@@ -440,6 +490,11 @@ function CreateForm({ opts }: { opts: CreateOptions }) {
                 <dd>{services.length ? services.join(', ') : 'none'}</dd>
                 <dt>Exposure</dt>
                 <dd>{exposure === 'none' ? 'internal' : exposure}</dd>
+                <dt>Network</dt>
+                <dd>
+                  {networkPolicy}
+                  {gpu && features.gpu ? ' · GPU' : ''}
+                </dd>
                 <dt>Auto-delete</dt>
                 <dd>{ttlLabel(ttl)}</dd>
                 <dt>Hostname</dt>

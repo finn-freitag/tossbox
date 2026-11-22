@@ -178,6 +178,9 @@ function UserEditor({ user, onClose }: { user: User | null; onClose: () => void 
           <Field label="Max phones">
             <input type="number" min={0} value={quota.max_phones} onChange={num('max_phones')} />
           </Field>
+          <Field label="Max devices with GPU" hint="0 = unlimited">
+            <input type="number" min={0} value={quota.max_gpus ?? 0} onChange={num('max_gpus')} />
+          </Field>
           <Field label="Max TTL (hours)" hint="0 = devices may live forever">
             <input type="number" min={0} value={quota.max_ttl_hours} onChange={num('max_ttl_hours')} />
           </Field>

@@ -74,6 +74,8 @@ type DeviceView struct {
 	CreatedAt     time.Time         `json:"created_at"`
 	UpdatedAt     time.Time         `json:"updated_at"`
 	Params        map[string]string `json:"params"`
+	NetworkPolicy string            `json:"network_policy"`
+	GPU           bool              `json:"gpu"`
 }
 
 type nodeInfo struct {
@@ -112,6 +114,7 @@ func (s *Service) viewWith(d *store.Device, nodes map[string]nodeInfo) *DeviceVi
 		License:  LicenseView{Mode: d.LicenseMode, Pool: d.LicensePool},
 		TTLHours: d.TTLHours, ExpiresAt: d.ExpiresAt, CreatedAt: d.CreatedAt, UpdatedAt: d.UpdatedAt,
 		Params: d.Params, Services: []ServiceView{},
+		NetworkPolicy: d.NetworkPolicy, GPU: d.GPU,
 	}
 	if v.License.Mode == "" {
 		v.License.Mode = "none"
@@ -136,7 +139,7 @@ func (s *Service) viewWith(d *store.Device, nodes map[string]nodeInfo) *DeviceVi
 	}
 	for _, svc := range d.Services {
 		sv := ServiceView{Name: svc.Name, Port: svc.PublicPort, InternalPort: svc.InternalPort}
-		if model.CredentialServices[svc.Name] {
+		if model.CredentialService(d.TemplateFamily, svc.Name) {
 			sv.Username, sv.Password = d.Username, password
 		}
 		hp := host + ":" + strconv.Itoa(svc.PublicPort)
@@ -323,7 +326,7 @@ func (s *Service) nodeSnapshots(ctx context.Context) ([]scheduler.Node, []*store
 		}
 		// Deleting devices still occupy resources until the node destroyed them.
 		byNode[d.NodeID] = append(byNode[d.NodeID], scheduler.DeviceLoad{
-			Driver: d.Driver, Res: d.Res, Stopped: d.Power == model.PowerStopped, LicensePool: d.LicensePool,
+			Driver: d.Driver, Res: d.Res, Stopped: d.Power == model.PowerStopped, LicensePool: d.LicensePool, GPU: d.GPU,
 		})
 	}
 	out := make([]scheduler.Node, 0, len(nodes))
@@ -346,7 +349,8 @@ func snapshot(n *store.Node, devs []scheduler.DeviceLoad, online bool) scheduler
 		Devices:       devs,
 	}
 	for _, d := range c.Drivers {
-		sn.Drivers[d.Name] = scheduler.DriverCaps{Families: d.Families, Services: d.Services, FixedSlots: d.FixedSlots, Healthy: d.Healthy}
+		sn.Drivers[d.Name] = scheduler.DriverCaps{Families: d.Families, Services: d.Services, FixedSlots: d.FixedSlots, Healthy: d.Healthy,
+			NetworkPolicies: d.NetworkPolicies, GPUMode: d.GPUMode, GPUSlots: d.GPUSlots}
 	}
 	for _, p := range c.LicensePools {
 		sn.LicensePools[p.Name] += p.Total

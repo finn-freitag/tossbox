@@ -23,6 +23,7 @@ type Quota struct {
 	MaxRAMMB            int64    `json:"max_ram_mb"`
 	MaxStorageGB        int64    `json:"max_storage_gb"`
 	MaxPhones           int      `json:"max_phones"`
+	MaxGPUs             int      `json:"max_gpus"`
 	AllowedDrivers      []string `json:"allowed_drivers"`
 	AllowedTemplates    []string `json:"allowed_templates"`
 	AllowedLicensePools []string `json:"allowed_license_pools"`
@@ -60,6 +61,7 @@ type Usage struct {
 	RAMMB     int64 `json:"ram_mb"`
 	StorageGB int64 `json:"storage_gb"`
 	Phones    int   `json:"phones"`
+	GPUs      int   `json:"gpus"`
 }
 
 // Settings are the admin-editable runtime settings.
@@ -122,6 +124,22 @@ func (s Settings) Validate() error {
 
 // Services known to Tossbox, in display order.
 var Services = []string{"ssh", "rdp", "vnc", "adb", "http", "https"}
+
+// Network policies of a device (outbound access).
+const (
+	NetworkInternet = "internet" // internet only; the node firewall blocks private networks
+	NetworkOffline  = "offline"  // no outbound traffic; still reachable through its services
+)
+
+// NetworkPolicies in display order.
+var NetworkPolicies = []string{NetworkInternet, NetworkOffline}
+
+// CredentialService reports whether a service of a device of this template
+// family gets the default user and password. Browser devices protect all
+// their services (VNC and the web UI) with the device password.
+func CredentialService(family, svc string) bool {
+	return CredentialServices[svc] || family == "browser"
+}
 
 // CredentialServices use the device's default user and password.
 var CredentialServices = map[string]bool{"ssh": true, "rdp": true, "vnc": true}

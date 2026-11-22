@@ -223,11 +223,13 @@ const familyColor: Record<Family, string> = {
   android: 'var(--c-android)',
   macos: 'var(--c-macos)',
   ios: 'var(--c-macos)',
+  chromeos: 'var(--c-chromeos)',
+  browser: 'var(--c-browser)',
 }
 
 /** Simple, brand-neutral OS glyph: colored tile with a short label. */
 export function OsIcon({ family, size = 32 }: { family: Family; size?: number }) {
-  const text = { linux: 'Lx', windows: 'Win', android: 'And', macos: 'mac', ios: 'iOS' }[family]
+  const text = { linux: 'Lx', windows: 'Win', android: 'And', macos: 'mac', ios: 'iOS', chromeos: 'CrOS', browser: 'Web' }[family]
   return (
     <span
       className="os-icon"

@@ -42,6 +42,11 @@ type CreateDeviceRequest struct {
 	License    *LicenseRequest   `json:"license"`
 	Power      string            `json:"power"`
 	Params     map[string]string `json:"params"`
+	// NetworkPolicy: internet (default) or offline.
+	NetworkPolicy string `json:"network_policy"`
+	// GPU: share the node's GPU with the device. nil = the template's
+	// default (param "gpu": required / recommended).
+	GPU *bool `json:"gpu"`
 }
 
 // LicenseRequest selects the Windows license option.
@@ -72,6 +77,15 @@ func DefaultServicesFor(t *catalog.Template, st model.Settings) []string {
 		def := slices.Contains(st.DefaultServices, svc) || svc == "adb"
 		if def && t.Supports(svc) {
 			out = append(out, svc)
+		}
+	}
+	if len(out) == 0 {
+		// None of the global defaults applies (e.g. browsers, ChromeOS):
+		// use the template's remote access services.
+		for _, svc := range []string{"ssh", "rdp", "vnc"} {
+			if t.Supports(svc) {
+				out = append(out, svc)
+			}
 		}
 	}
 	return out
@@ -186,6 +200,20 @@ func (s *Service) CreateDevice(ctx context.Context, p Principal, req CreateDevic
 	if err != nil {
 		return nil, err
 	}
+	if req.NetworkPolicy == "" {
+		req.NetworkPolicy = model.NetworkInternet
+	}
+	if !slices.Contains(model.NetworkPolicies, req.NetworkPolicy) {
+		return nil, model.Errf(model.CodeValidation, "network_policy must be internet or offline")
+	}
+	gpuMode := tpl.Params["gpu"] // required | recommended | ""
+	wantGPU := gpuMode == "required" || gpuMode == "recommended"
+	if req.GPU != nil {
+		wantGPU = *req.GPU
+		if !wantGPU && gpuMode == "required" {
+			return nil, model.Errf(model.CodeValidation, "template %s needs a GPU", tpl.ID)
+		}
+	}
 
 	if req.TTLHours < 0 {
 		return nil, model.Errf(model.CodeValidation, "ttl_hours must be >= 0")
@@ -258,12 +286,24 @@ func (s *Service) CreateDevice(ctx context.Context, p Principal, req CreateDevic
 			}
 		}
 	}
-	place, err := scheduler.Pick(snaps, scheduler.Request{
+	sreq := scheduler.Request{
 		Family: tpl.Family, Arch: tpl.Arch, Drivers: drivers, NodeID: req.NodeID,
 		Res: resources, Services: services, LicensePool: licensePool,
-	}, st)
+		NetworkPolicy: req.NetworkPolicy, GPU: wantGPU,
+	}
+	place, err := scheduler.Pick(snaps, sreq, st)
+	if err != nil && wantGPU && req.GPU == nil && gpuMode == "recommended" {
+		// Recommended only: fall back to no GPU if no node can give one.
+		sreq.GPU, wantGPU = false, false
+		place, err = scheduler.Pick(snaps, sreq, st)
+	}
 	if err != nil {
 		return nil, err
+	}
+	if wantGPU {
+		if err := scheduler.CheckQuota(u.Quota, usage, scheduler.QuotaRequest{GPU: true, TTLHours: req.TTLHours}); err != nil {
+			return nil, err
+		}
 	}
 	if place.Driver == "usb-phone" {
 		if err := scheduler.CheckQuota(u.Quota, usage, scheduler.QuotaRequest{Phone: true, TTLHours: req.TTLHours}); err != nil {
@@ -314,6 +354,7 @@ func (s *Service) CreateDevice(ctx context.Context, p Principal, req CreateDevic
 		LicenseMode: lic.Mode, LicensePool: licensePool, LicenseKeyEnc: keyEnc,
 		Username: tpl.DefaultUser, PasswordEnc: pwEnc, SSHKeys: u.SSHKeys, ADBKeys: u.ADBKeys, Params: req.Params,
 		TTLHours: req.TTLHours, ExpiresAt: expires, Revision: 1,
+		NetworkPolicy: req.NetworkPolicy, GPU: wantGPU,
 	}
 	for i, svc := range services {
 		d.Services = append(d.Services, store.Service{Name: svc, InternalPort: tpl.ServicePort(svc), PublicPort: pts[i]})
@@ -401,6 +442,9 @@ func usageOf(devs []*store.Device) model.Usage {
 		u.StorageGB += d.Res.StorageGB
 		if d.Driver == "usb-phone" {
 			u.Phones++
+		}
+		if d.GPU {
+			u.GPUs++
 		}
 	}
 	return u
@@ -609,6 +653,7 @@ func (s *Service) spec(d *store.Device) (*agentv1.DeviceSpec, error) {
 			Vcpus: int32(d.Res.VCPUs), CpuCapPercent: int32(d.Res.CPUCapPercent),
 			RamMb: d.Res.RAMMB, StorageGb: d.Res.StorageGB,
 		},
+		NetworkPolicy:     d.NetworkPolicy,
 		SshAuthorizedKeys: d.SSHKeys,
 		AdbAuthorizedKeys: d.ADBKeys,
 		Params:            d.Params,
@@ -619,6 +664,9 @@ func (s *Service) spec(d *store.Device) (*agentv1.DeviceSpec, error) {
 	if d.Power == model.PowerStopped {
 		spec.Power = agentv1.PowerState_POWER_STATE_STOPPED
 	}
+	if d.GPU {
+		spec.Resources.Gpus = 1
+	}
 	switch d.LicenseMode {
 	case "user_key":
 		spec.License = &agentv1.LicenseSpec{Mode: agentv1.LicenseMode_LICENSE_MODE_USER_KEY, UserKey: key}
@@ -627,7 +675,7 @@ func (s *Service) spec(d *store.Device) (*agentv1.DeviceSpec, error) {
 	}
 	for _, svc := range d.Services {
 		ss := &agentv1.ServiceSpec{Name: svc.Name, InternalPort: int32(svc.InternalPort), PublicPort: int32(svc.PublicPort)}
-		if model.CredentialServices[svc.Name] {
+		if model.CredentialService(d.TemplateFamily, svc.Name) {
 			ss.Username, ss.Password = d.Username, password
 		}
 		spec.Services = append(spec.Services, ss)

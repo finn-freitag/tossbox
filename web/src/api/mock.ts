@@ -30,7 +30,7 @@ const me: User = {
   ssh_keys: ['ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExampleKeyOnly finn@laptop'],
   adb_keys: [],
   quota: { ...emptyQuota(), max_machines: 10, max_ram_mb: 65536 },
-  usage: { machines: 0, vcpus: 0, ram_mb: 0, storage_gb: 0, phones: 0 },
+  usage: { machines: 0, vcpus: 0, ram_mb: 0, storage_gb: 0, phones: 0, gpus: 0 },
   created_at: now(),
 }
 
@@ -43,7 +43,7 @@ const users: User[] = [
     ssh_keys: [],
     adb_keys: [],
     quota: { ...emptyQuota(), max_machines: 3, allowed_drivers: ['libvirt'], allowed_exposures: ['none', 'tailscale'], max_ttl_hours: 24 },
-    usage: { machines: 0, vcpus: 0, ram_mb: 0, storage_gb: 0, phones: 0 },
+    usage: { machines: 0, vcpus: 0, ram_mb: 0, storage_gb: 0, phones: 0, gpus: 0 },
     created_at: now(),
   },
 ]
@@ -206,6 +206,8 @@ function makeDevice(req: CreateDeviceRequest): Device {
     created_at: now(),
     updated_at: now(),
     params: req.params ?? {},
+    network_policy: req.network_policy ?? 'internet',
+    gpu: !!req.gpu,
   }
 }
 
@@ -249,6 +251,7 @@ function recomputeUsage() {
     ram_mb: mine.reduce((a, d) => a + d.resources.ram_mb, 0),
     storage_gb: mine.reduce((a, d) => a + d.resources.storage_gb, 0),
     phones: 0,
+    gpus: 0,
   }
   for (const n of nodes) {
     const on = devices.filter((d) => d.node?.id === n.id)
@@ -413,7 +416,7 @@ export async function mockRequest<T>(method: string, fullPath: string, body?: un
       ssh_keys: [],
       adb_keys: [],
       quota: b.quota as User['quota'],
-      usage: { machines: 0, vcpus: 0, ram_mb: 0, storage_gb: 0, phones: 0 },
+      usage: { machines: 0, vcpus: 0, ram_mb: 0, storage_gb: 0, phones: 0, gpus: 0 },
       created_at: now(),
     }
     users.push(u)

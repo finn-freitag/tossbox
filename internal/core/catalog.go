@@ -26,6 +26,8 @@ type TemplateView struct {
 	DefaultResources  catalog.Resources `json:"default_resources"`
 	License           bool              `json:"license"`
 	Source            string            `json:"source"`
+	// GPU is the template's GPU need: "required", "recommended" or "".
+	GPU string `json:"gpu"`
 }
 
 // onlineDrivers returns driver names enabled and healthy on online nodes.
@@ -81,6 +83,7 @@ func (s *Service) templateViews(p Principal, st model.Settings, online map[strin
 			CompatibleDrivers: t.Drivers(), AvailableDrivers: nonNil(avail),
 			SupportedServices: nonNil(t.SupportedServices), DefaultServices: DefaultServicesFor(t, st),
 			MinResources: t.MinResources, DefaultResources: t.DefaultResources, License: t.License, Source: t.Source,
+			GPU: t.Params["gpu"],
 		})
 	}
 	return out
@@ -145,6 +148,14 @@ type CreateOptions struct {
 	DefaultTTLHours  int                 `json:"default_ttl_hours"`
 	MaxTTLHours      int                 `json:"max_ttl_hours"`
 	ServiceCatalog   []ServiceOption     `json:"service_catalog"`
+	// DriverFeatures: per driver, what online healthy nodes offer.
+	DriverFeatures map[string]DriverFeature `json:"driver_features"`
+}
+
+// DriverFeature summarizes optional driver features across online nodes.
+type DriverFeature struct {
+	NetworkPolicies []string `json:"network_policies"`
+	GPU             bool     `json:"gpu"`
 }
 
 // CreateOptionsFor returns everything the create form needs.
@@ -167,7 +178,7 @@ func (s *Service) CreateOptionsFor(ctx context.Context, p Principal) (*CreateOpt
 	out := &CreateOptions{
 		Templates: s.templateViews(p, st, onlineDrivers(snaps)),
 		Nodes:     []CreateNodeOption{}, LicensePools: []LicensePoolOption{},
-		Quota: q, Usage: usage, DriverServices: map[string][]string{},
+		Quota: q, Usage: usage, DriverServices: map[string][]string{}, DriverFeatures: map[string]DriverFeature{},
 		DefaultTTLHours: st.DefaultTTLHours, MaxTTLHours: q.MaxTTLHours,
 	}
 	for _, e := range model.Exposures {
@@ -189,6 +200,18 @@ func (s *Service) CreateOptionsFor(ctx context.Context, p Principal) (*CreateOpt
 			}
 			opt.Drivers = append(opt.Drivers, name)
 			if sn.Online && d.Healthy {
+				f := out.DriverFeatures[name]
+				pols := d.NetworkPolicies
+				if len(pols) == 0 {
+					pols = []string{model.NetworkInternet}
+				}
+				for _, p := range pols {
+					if !slices.Contains(f.NetworkPolicies, p) {
+						f.NetworkPolicies = append(f.NetworkPolicies, p)
+					}
+				}
+				f.GPU = f.GPU || d.GPUMode != ""
+				out.DriverFeatures[name] = f
 				if driverSvc[name] == nil {
 					driverSvc[name] = map[string]bool{}
 				}
@@ -239,7 +262,7 @@ func (s *Service) CreateOptionsFor(ctx context.Context, p Principal) (*CreateOpt
 			o.Warning = "VNC is unencrypted; prefer Guacamole, an SSH tunnel or Tailscale"
 		case "adb":
 			o.Label = "ADB"
-			o.Warning = "adb has no authentication: anyone who can reach the port gets a root shell; use an allowlist or Tailscale"
+			o.Warning = "Only your adb keys (Profile → ADB keys) can connect"
 		case "http":
 			o.Label = "HTTP (port 80)"
 		case "https":

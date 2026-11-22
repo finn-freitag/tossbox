@@ -78,6 +78,8 @@ export const familyLabel: Record<string, string> = {
   android: 'Android',
   macos: 'macOS',
   ios: 'iOS',
+  chromeos: 'ChromeOS',
+  browser: 'Browsers',
 }
 
 export const serviceLabel: Record<string, string> = {

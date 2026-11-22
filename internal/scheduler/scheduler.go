@@ -5,6 +5,7 @@ package scheduler
 
 import (
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 
@@ -17,6 +18,10 @@ type DriverCaps struct {
 	Services   []string
 	FixedSlots int // > 0: count-based driver (orchard, usb-phone)
 	Healthy    bool
+	// NetworkPolicies the driver enforces; empty = internet only (old agents).
+	NetworkPolicies []string
+	GPUMode         string // "" = no GPU
+	GPUSlots        int    // -1 = shared, otherwise devices with a GPU at once
 }
 
 // DeviceLoad is a device already placed on a node.
@@ -25,6 +30,7 @@ type DeviceLoad struct {
 	Res         model.Resources
 	Stopped     bool
 	LicensePool string // pool lease, if any
+	GPU         bool
 }
 
 // Limits from the node config (0 = host total / 100%).
@@ -180,6 +186,9 @@ type Request struct {
 	Res         model.Resources
 	Services    []string
 	LicensePool string
+	// NetworkPolicy "" means internet.
+	NetworkPolicy string
+	GPU           bool
 }
 
 // Placement is the scheduler's decision.
@@ -255,6 +264,25 @@ func fits(n *Node, drv string, caps DriverCaps, req Request, s model.Settings) s
 			return "service " + svc + " not supported"
 		}
 	}
+	if p := req.NetworkPolicy; p != "" && p != model.NetworkInternet && !slices.Contains(caps.NetworkPolicies, p) {
+		return "network policy " + req.NetworkPolicy + " not supported"
+	}
+	if req.GPU {
+		if caps.GPUMode == "" {
+			return "no GPU"
+		}
+		if caps.GPUSlots > 0 {
+			used := 0
+			for _, d := range n.Devices {
+				if d.Driver == drv && d.GPU {
+					used++
+				}
+			}
+			if used >= caps.GPUSlots {
+				return fmt.Sprintf("all %d GPU slots in use", caps.GPUSlots)
+			}
+		}
+	}
 	if req.LicensePool != "" && n.FreePool(req.LicensePool, s) < 1 {
 		return "no free key in license pool " + req.LicensePool
 	}
@@ -284,6 +312,7 @@ func fits(n *Node, drv string, caps DriverCaps, req Request, s model.Settings) s
 type QuotaRequest struct {
 	Res      model.Resources
 	Phone    bool
+	GPU      bool
 	TTLHours int
 }
 
@@ -303,6 +332,9 @@ func CheckQuota(q model.Quota, u model.Usage, r QuotaRequest) error {
 	}
 	if r.Phone {
 		checks = append(checks, over("phones", int64(u.Phones), 1, int64(q.MaxPhones)))
+	}
+	if r.GPU {
+		checks = append(checks, over("GPUs", int64(u.GPUs), 1, int64(q.MaxGPUs)))
 	}
 	for _, err := range checks {
 		if err != nil {

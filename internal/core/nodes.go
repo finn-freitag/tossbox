@@ -285,6 +285,7 @@ func CapsFromProto(c *agentv1.Capabilities) model.NodeCapabilities {
 		di := model.DriverInfo{
 			Name: d.GetName(), Families: nz(d.GetFamilies()), Services: nz(d.GetServices()), Backends: nz(d.GetBackends()),
 			FixedSlots: int(d.GetFixedSlots()), Healthy: d.GetHealthy(), Message: d.GetMessage(), PhysicalDevices: []model.PhysicalDevice{},
+			NetworkPolicies: nz(d.GetNetworkPolicies()), GPUMode: d.GetGpuMode(), GPUSlots: int(d.GetGpuSlots()),
 		}
 		for _, pd := range d.GetPhysicalDevices() {
 			di.PhysicalDevices = append(di.PhysicalDevices, model.PhysicalDevice{Serial: pd.GetSerial(), Family: pd.GetFamily(), Model: pd.GetModel(), Available: pd.GetAvailable()})

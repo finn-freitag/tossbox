@@ -30,6 +30,9 @@ type DriverInfo struct {
 	Healthy         bool             `json:"healthy"`
 	Message         string           `json:"message"`
 	PhysicalDevices []PhysicalDevice `json:"physical_devices"`
+	NetworkPolicies []string         `json:"network_policies"`
+	GPUMode         string           `json:"gpu_mode"`  // "", virgl, sriov, render
+	GPUSlots        int              `json:"gpu_slots"` // -1 = shared (unlimited)
 }
 
 // PhysicalDevice is a phone attached to a usb-phone node.
