@@ -34,5 +34,6 @@ USER tossbox
 VOLUME /data
 ENV TOSSBOX_DATA_DIR=/data
 EXPOSE 8080 7443 80 443
-HEALTHCHECK --interval=30s --timeout=5s --start-period=30s CMD wget -qO- http://127.0.0.1:8080/healthz || exit 1
+# Probes the port from TOSSBOX_HTTP_LISTEN (default :8080) on loopback.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=30s CMD l="${TOSSBOX_HTTP_LISTEN:-:8080}"; wget -qO- "http://127.0.0.1:${l##*:}/healthz" || exit 1
 ENTRYPOINT ["/usr/local/bin/tossbox"]
