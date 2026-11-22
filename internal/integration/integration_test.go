@@ -17,6 +17,7 @@ import (
 	"net/http"
 	"net/http/cookiejar"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"strings"
 	"sync"
@@ -63,8 +64,13 @@ func testDB(t *testing.T) string {
 			c.Close(context.Background())
 		}
 	})
-	cfg, _ := pgx.ParseConfig(base)
-	return fmt.Sprintf("postgres://%s@%s:%d/%s?sslmode=disable", cfg.User, cfg.Host, cfg.Port, name)
+	// Same server and credentials as base, different database.
+	u, err := url.Parse(base)
+	if err != nil {
+		t.Fatalf("parse TOSSBOX_TEST_DATABASE_URL: %v", err)
+	}
+	u.Path = "/" + name
+	return u.String()
 }
 
 type fakeGateway struct {
