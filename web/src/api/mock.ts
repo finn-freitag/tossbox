@@ -323,6 +323,11 @@ export async function mockRequest<T>(method: string, fullPath: string, body?: un
       quota: me.quota,
       usage: me.usage,
       allowed_exposures: ['public', 'tailscale', 'none'],
+      driver_features: {
+        libvirt: { network_policies: ['internet', 'offline'], gpu: true },
+        lxc: { network_policies: ['internet', 'offline'], gpu: true },
+        'docker-qemu': { network_policies: ['internet', 'offline'], gpu: true },
+      },
       default_ttl_hours: settings.default_ttl_hours,
       max_ttl_hours: me.quota.max_ttl_hours,
       service_catalog: [
