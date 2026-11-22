@@ -1,0 +1,63 @@
+# Tossbox dashboard. Copy .env.example to .env, adjust it, then:
+#   docker compose up -d
+# With the optional Guacamole integration:
+#   docker compose --profile guacamole up -d
+name: tossbox
+
+services:
+  tossbox:
+    image: ghcr.io/finn-freitag/tossbox:${TOSSBOX_VERSION:-latest}
+    restart: unless-stopped
+    # Host networking: the gateway opens one port per exposed device service
+    # (TOSSBOX_PORT_RANGE) plus 80/443 at runtime. Publishing thousands of
+    # ports through Docker's proxy is slow, so the container uses the host's
+    # network stack directly.
+    network_mode: host
+    env_file: .env
+    environment:
+      TOSSBOX_DATABASE_URL: postgres://tossbox:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@127.0.0.1:${POSTGRES_PORT:-5432}/tossbox?sslmode=disable
+      TOSSBOX_GUACAMOLE_UPSTREAM: http://127.0.0.1:${GUACAMOLE_PORT:-8081}
+    volumes:
+      - tossbox-data:/data
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  postgres:
+    image: postgres:18-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: tossbox
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: tossbox
+    ports:
+      - 127.0.0.1:${POSTGRES_PORT:-5432}:5432
+    volumes:
+      - postgres-data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U tossbox -d tossbox"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  # ---- optional: browser access via Apache Guacamole (profile "guacamole")
+  guacd:
+    image: guacamole/guacd:1.6.0
+    restart: unless-stopped
+    profiles: [guacamole]
+
+  guacamole:
+    image: guacamole/guacamole:1.6.0
+    restart: unless-stopped
+    profiles: [guacamole]
+    depends_on: [guacd]
+    environment:
+      GUACD_HOSTNAME: guacd
+      # Enables the bundled guacamole-auth-json extension (property json-secret-key).
+      JSON_SECRET_KEY: ${TOSSBOX_GUACAMOLE_JSON_SECRET:-}
+    ports:
+      - 127.0.0.1:${GUACAMOLE_PORT:-8081}:8080
+
+volumes:
+  tossbox-data:
+  postgres-data:
