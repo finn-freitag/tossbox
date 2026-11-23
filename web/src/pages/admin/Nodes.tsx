@@ -125,8 +125,10 @@ function NodeCard({ n, onToken }: { n: Node; onToken: (e: NodeEnrollment) => voi
                   {d.families.join(', ')}
                   {d.backends.length > 0 && ` · ${d.backends.join(', ')}`}
                   {d.fixed_slots > 0 && ` · ${d.fixed_slots} slots`}
+                  {d.gpu_mode && ` · GPU: ${d.gpu_mode}${d.gpu_slots && d.gpu_slots > 0 ? ` (${d.gpu_slots} slots)` : ' (shared)'}`}
+                  {d.network_policies?.includes('offline') && ' · offline policy'}
                 </span>
-                {d.message && <span className="small text-error">{d.message}</span>}
+                {d.message && <span className={`small ${d.healthy ? 'muted' : 'text-error'}`}>{d.message}</span>}
                 {d.physical_devices.length > 0 && (
                   <span className="small muted">
                     {d.physical_devices.map((p) => `${p.model} (${p.available ? 'free' : 'in use'})`).join(', ')}

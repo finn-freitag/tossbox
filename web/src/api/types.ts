@@ -219,6 +219,9 @@ export interface DriverCapabilities {
   families: string[]
   services: string[]
   backends: string[]
+  network_policies?: string[]
+  gpu_mode?: string
+  gpu_slots?: number
   fixed_slots: number
   healthy: boolean
   message: string
