@@ -150,7 +150,7 @@ export interface CreateOptions {
   max_ttl_hours: number
   service_catalog: ServiceCatalogEntry[]
   /** Optional features per driver, reported by online nodes. */
-  driver_features?: Record<string, { network_policies: NetworkPolicy[]; gpu: boolean }>
+  driver_features?: Record<string, { network_policies: NetworkPolicy[]; gpu: boolean; gpu_families?: string[] | null }>
 }
 
 export interface DeviceService {

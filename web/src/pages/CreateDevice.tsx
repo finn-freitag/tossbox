@@ -111,7 +111,7 @@ function CreateForm({ opts }: { opts: CreateOptions }) {
     const f = drv.map((d) => opts.driver_features?.[d])
     return {
       offline: f.some((x) => x?.network_policies.includes('offline')),
-      gpu: f.some((x) => x?.gpu),
+      gpu: f.some((x) => x?.gpu && (!x.gpu_families?.length || x.gpu_families.includes(tpl?.family ?? ''))),
     }
   }, [tpl, driver, opts.driver_features])
 

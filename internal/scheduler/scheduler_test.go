@@ -152,3 +152,41 @@ func TestQuota(t *testing.T) {
 		t.Fatal("status")
 	}
 }
+
+// The homelab situation: libvirt has no Windows golden image, docker-qemu
+// hands out SR-IOV VFs to Linux and Windows guests from the same pool.
+func TestGoldenImageGPUFamiliesSharedVFs(t *testing.T) {
+	n := homelab()
+	n.Drivers = map[string]DriverCaps{
+		"libvirt":     {Families: []string{"linux", "windows"}, Services: []string{"ssh", "rdp"}, Healthy: true, GPUMode: "sriov", GPUSlots: 2, GPUFamilies: []string{"linux", "windows"}},
+		"docker-qemu": {Families: []string{"linux", "windows"}, Services: []string{"ssh", "rdp"}, Healthy: true, GPUMode: "sriov", GPUSlots: 2, GPUFamilies: []string{"linux", "windows"}},
+	}
+	s := model.DefaultSettings()
+	r := req(4096, 0, 50)
+	r.Drivers = []string{"libvirt", "docker-qemu"}
+	r.GPU = true
+	r.Images = map[string]string{"libvirt": "local:windows-11-pro.qcow2", "docker-qemu": "docker://dockurr/windows"}
+	p, err := Pick([]Node{n}, r, s)
+	if err != nil || p.Driver != "docker-qemu" {
+		t.Fatalf("want docker-qemu (no golden image for libvirt): %+v %v", p, err)
+	}
+	r.Drivers = []string{"libvirt"}
+	if _, err := Pick([]Node{n}, r, s); err == nil || !strings.Contains(err.Error(), "windows-11-pro.qcow2 is not on this node") {
+		t.Fatalf("missing golden image not reported: %v", err)
+	}
+	n.LocalImages = []string{"windows-11-pro.qcow2"}
+	if p, err := Pick([]Node{n}, r, s); err != nil || p.Driver != "libvirt" {
+		t.Fatalf("golden image present: %+v %v", p, err)
+	}
+	// One VF used by docker-qemu and one by libvirt: the shared pool of 2 is full.
+	n.Devices = []DeviceLoad{{Driver: "docker-qemu", GPU: true, Res: model.Resources{RAMMB: 1024}}, {Driver: "libvirt", GPU: true, Res: model.Resources{RAMMB: 1024}}}
+	if _, err := Pick([]Node{n}, r, s); err == nil || !strings.Contains(err.Error(), "GPU slots in use") {
+		t.Fatalf("shared VF pool not counted: %v", err)
+	}
+	// VirGL can't serve Windows guests.
+	n.Devices = nil
+	n.Drivers["libvirt"] = DriverCaps{Families: []string{"linux", "windows"}, Services: []string{"ssh", "rdp"}, Healthy: true, GPUMode: "virgl", GPUSlots: -1, GPUFamilies: []string{"linux"}}
+	if _, err := Pick([]Node{n}, r, s); err == nil || !strings.Contains(err.Error(), "can't be used by windows") {
+		t.Fatalf("virgl for windows: %v", err)
+	}
+}

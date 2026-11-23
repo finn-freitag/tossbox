@@ -120,6 +120,7 @@ Runtime settings such as overcommit, default services, password length, default 
 - Passwords are generated per device (≥ 20 characters, letters, digits and `-_.`), shown only to the owner and admins, and stored encrypted.
 - Behind a reverse proxy, set `TOSSBOX_TRUSTED_PROXIES`. Otherwise every request seems to come from the proxy: failed logins from anyone then lock out everyone for 10 minutes, and HTTP allowlists see the proxy's address.
 - adb on redroid gives a root shell in a privileged container. Android devices therefore require adb authentication: users add their `~/.android/adbkey.pub` under **Profile → ADB keys**, and only those keys can connect to devices they create afterwards. Public ADB exposure is still off by default (**Settings → Allow public ADB**); prefer Tailscale exposure or an allowlist.
+- Templates with `local:` images (e.g. Windows golden images for libvirt) are only scheduled on nodes that report the image; GPU requests only go to drivers whose GPU the guest family can use.
 - Devices can be created with the `offline` network policy (no outbound traffic at all, still reachable through their services), and can share the node's GPU. See the tb-agent README.
 - Node agents only accept device port connections from the dashboard and private networks by default (`allowed_sources` in node.yaml), so the gateway's allowlists and rate limits can't be bypassed from the internet.
 - VNC is off by default. Classic VNC auth only uses 8 password characters and isn't encrypted, so prefer Guacamole, an SSH tunnel or Tailscale exposure.

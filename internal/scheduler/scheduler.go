@@ -20,8 +20,9 @@ type DriverCaps struct {
 	Healthy    bool
 	// NetworkPolicies the driver enforces; empty = internet only (old agents).
 	NetworkPolicies []string
-	GPUMode         string // "" = no GPU
-	GPUSlots        int    // -1 = shared, otherwise devices with a GPU at once
+	GPUMode         string   // "" = no GPU
+	GPUSlots        int      // -1 = shared, otherwise devices with a GPU at once
+	GPUFamilies     []string // families that can use the GPU; empty = all
 }
 
 // DeviceLoad is a device already placed on a node.
@@ -54,6 +55,7 @@ type Node struct {
 	LicensePools  map[string]int // pool -> total keys
 	StorageUsedGB int64          // actual usage reported by the agent
 	Devices       []DeviceLoad
+	LocalImages   []string // images for local:<name> template images
 }
 
 // CPUPercent returns the share of node CPU a device accounts for: its cap if
@@ -189,6 +191,9 @@ type Request struct {
 	// NetworkPolicy "" means internet.
 	NetworkPolicy string
 	GPU           bool
+	// Images maps a driver to the template's image URL for it; local:<name>
+	// images must exist on the node.
+	Images map[string]string
 }
 
 // Placement is the scheduler's decision.
@@ -267,14 +272,25 @@ func fits(n *Node, drv string, caps DriverCaps, req Request, s model.Settings) s
 	if p := req.NetworkPolicy; p != "" && p != model.NetworkInternet && !slices.Contains(caps.NetworkPolicies, p) {
 		return "network policy " + req.NetworkPolicy + " not supported"
 	}
+	if name, ok := strings.CutPrefix(req.Images[drv], "local:"); ok && !slices.Contains(n.LocalImages, name) {
+		return "image " + name + " is not on this node (build it with Packer, see tb-templates/packer)"
+	}
 	if req.GPU {
 		if caps.GPUMode == "" {
 			return "no GPU"
 		}
+		if req.Family != "" && len(caps.GPUFamilies) > 0 && !slices.Contains(caps.GPUFamilies, req.Family) {
+			return "the GPU (" + caps.GPUMode + ") can't be used by " + req.Family + " guests"
+		}
 		if caps.GPUSlots > 0 {
+			// SR-IOV virtual functions are one pool per node, shared by
+			// all drivers that hand them out.
 			used := 0
 			for _, d := range n.Devices {
-				if d.Driver == drv && d.GPU {
+				if !d.GPU {
+					continue
+				}
+				if d.Driver == drv || (caps.GPUMode == "sriov" && n.Drivers[d.Driver].GPUMode == "sriov") {
 					used++
 				}
 			}

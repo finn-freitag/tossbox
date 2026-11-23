@@ -4,6 +4,7 @@ import (
 	"context"
 	"slices"
 	"sort"
+	"strings"
 
 	"github.com/finn-freitag/tossbox/internal/catalog"
 	"github.com/finn-freitag/tossbox/internal/model"
@@ -30,17 +31,23 @@ type TemplateView struct {
 	GPU string `json:"gpu"`
 }
 
-// onlineDrivers returns driver names enabled and healthy on online nodes.
-func onlineDrivers(nodes []scheduler.Node) map[string]bool {
+// availableDrivers returns the template's drivers that some online node can
+// run: healthy driver and, for local:<name> images, the image on the node.
+func availableDrivers(t *catalog.Template, nodes []scheduler.Node) map[string]bool {
 	out := map[string]bool{}
 	for _, n := range nodes {
 		if !n.Online {
 			continue
 		}
 		for name, d := range n.Drivers {
-			if d.Healthy {
-				out[name] = true
+			img, ok := t.Images[name]
+			if !ok || !d.Healthy {
+				continue
 			}
+			if local, isLocal := strings.CutPrefix(img.URL, "local:"); isLocal && !slices.Contains(n.LocalImages, local) {
+				continue
+			}
+			out[name] = true
 		}
 	}
 	return out
@@ -56,10 +63,10 @@ func (s *Service) Templates(ctx context.Context, p Principal) ([]*TemplateView, 
 	if err != nil {
 		return nil, err
 	}
-	return s.templateViews(p, st, onlineDrivers(snaps)), nil
+	return s.templateViews(p, st, snaps), nil
 }
 
-func (s *Service) templateViews(p Principal, st model.Settings, online map[string]bool) []*TemplateView {
+func (s *Service) templateViews(p Principal, st model.Settings, nodes []scheduler.Node) []*TemplateView {
 	q := p.User.Quota
 	out := []*TemplateView{}
 	for _, t := range s.catalog.All() {
@@ -67,6 +74,7 @@ func (s *Service) templateViews(p Principal, st model.Settings, online map[strin
 			continue
 		}
 		var allowed, avail []string
+		online := availableDrivers(t, nodes)
 		for _, d := range t.Drivers() {
 			if model.Allows(q.AllowedDrivers, d) {
 				allowed = append(allowed, d)
@@ -156,6 +164,8 @@ type CreateOptions struct {
 type DriverFeature struct {
 	NetworkPolicies []string `json:"network_policies"`
 	GPU             bool     `json:"gpu"`
+	// GPUFamilies that can use the GPU (empty = all).
+	GPUFamilies []string `json:"gpu_families"`
 }
 
 // CreateOptionsFor returns everything the create form needs.
@@ -176,7 +186,7 @@ func (s *Service) CreateOptionsFor(ctx context.Context, p Principal) (*CreateOpt
 	poolAllowed := func(name string) bool { return p.IsAdmin() || slices.Contains(q.AllowedLicensePools, name) }
 
 	out := &CreateOptions{
-		Templates: s.templateViews(p, st, onlineDrivers(snaps)),
+		Templates: s.templateViews(p, st, snaps),
 		Nodes:     []CreateNodeOption{}, LicensePools: []LicensePoolOption{},
 		Quota: q, Usage: usage, DriverServices: map[string][]string{}, DriverFeatures: map[string]DriverFeature{},
 		DefaultTTLHours: st.DefaultTTLHours, MaxTTLHours: q.MaxTTLHours,
@@ -210,7 +220,20 @@ func (s *Service) CreateOptionsFor(ctx context.Context, p Principal) (*CreateOpt
 						f.NetworkPolicies = append(f.NetworkPolicies, p)
 					}
 				}
-				f.GPU = f.GPU || d.GPUMode != ""
+				if d.GPUMode != "" {
+					if !f.GPU || len(f.GPUFamilies) > 0 {
+						if len(d.GPUFamilies) == 0 {
+							f.GPUFamilies = nil // some node serves every family
+						} else {
+							for _, fam := range d.GPUFamilies {
+								if !slices.Contains(f.GPUFamilies, fam) {
+									f.GPUFamilies = append(f.GPUFamilies, fam)
+								}
+							}
+						}
+					}
+					f.GPU = true
+				}
 				out.DriverFeatures[name] = f
 				if driverSvc[name] == nil {
 					driverSvc[name] = map[string]bool{}

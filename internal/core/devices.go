@@ -289,7 +289,10 @@ func (s *Service) CreateDevice(ctx context.Context, p Principal, req CreateDevic
 	sreq := scheduler.Request{
 		Family: tpl.Family, Arch: tpl.Arch, Drivers: drivers, NodeID: req.NodeID,
 		Res: resources, Services: services, LicensePool: licensePool,
-		NetworkPolicy: req.NetworkPolicy, GPU: wantGPU,
+		NetworkPolicy: req.NetworkPolicy, GPU: wantGPU, Images: map[string]string{},
+	}
+	for drv, img := range tpl.Images {
+		sreq.Images[drv] = img.URL
 	}
 	place, err := scheduler.Pick(snaps, sreq, st)
 	if err != nil && wantGPU && req.GPU == nil && gpuMode == "recommended" {

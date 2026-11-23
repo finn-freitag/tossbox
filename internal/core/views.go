@@ -347,10 +347,11 @@ func snapshot(n *store.Node, devs []scheduler.DeviceLoad, online bool) scheduler
 		LicensePools:  map[string]int{},
 		StorageUsedGB: u.StorageUsedGB,
 		Devices:       devs,
+		LocalImages:   c.LocalImages,
 	}
 	for _, d := range c.Drivers {
 		sn.Drivers[d.Name] = scheduler.DriverCaps{Families: d.Families, Services: d.Services, FixedSlots: d.FixedSlots, Healthy: d.Healthy,
-			NetworkPolicies: d.NetworkPolicies, GPUMode: d.GPUMode, GPUSlots: d.GPUSlots}
+			NetworkPolicies: d.NetworkPolicies, GPUMode: d.GPUMode, GPUSlots: d.GPUSlots, GPUFamilies: d.GPUFamilies}
 	}
 	for _, p := range c.LicensePools {
 		sn.LicensePools[p.Name] += p.Total

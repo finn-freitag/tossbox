@@ -11,6 +11,8 @@ type NodeCapabilities struct {
 	Limits        NodeLimits        `json:"limits"`
 	Drivers       []DriverInfo      `json:"drivers"`
 	LicensePools  []LicensePoolInfo `json:"license_pools"`
+	// LocalImages are the node's images for local:<name> templates.
+	LocalImages []string `json:"local_images"`
 }
 
 // NodeLimits from the node config.
@@ -33,6 +35,7 @@ type DriverInfo struct {
 	NetworkPolicies []string         `json:"network_policies"`
 	GPUMode         string           `json:"gpu_mode"`  // "", virgl, sriov, render
 	GPUSlots        int              `json:"gpu_slots"` // -1 = shared (unlimited)
+	GPUFamilies     []string         `json:"gpu_families"`
 }
 
 // PhysicalDevice is a phone attached to a usb-phone node.

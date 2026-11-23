@@ -266,10 +266,11 @@ func (s *Service) AuthenticateNode(ctx context.Context, nodeID, serial string) (
 
 // CapsFromProto converts agent capabilities into the stored JSON model.
 func CapsFromProto(c *agentv1.Capabilities) model.NodeCapabilities {
-	out := model.NodeCapabilities{Drivers: []model.DriverInfo{}, LicensePools: []model.LicensePoolInfo{}}
+	out := model.NodeCapabilities{Drivers: []model.DriverInfo{}, LicensePools: []model.LicensePoolInfo{}, LocalImages: []string{}}
 	if c == nil {
 		return out
 	}
+	out.LocalImages = append(out.LocalImages, c.GetLocalImages()...)
 	out.Arch, out.OS = c.GetArch(), c.GetOs()
 	out.HostCores, out.HostRAMMB, out.HostStorageGB = int(c.GetHostCores()), c.GetHostRamMb(), c.GetHostStorageGb()
 	if l := c.GetLimits(); l != nil {
@@ -286,6 +287,7 @@ func CapsFromProto(c *agentv1.Capabilities) model.NodeCapabilities {
 			Name: d.GetName(), Families: nz(d.GetFamilies()), Services: nz(d.GetServices()), Backends: nz(d.GetBackends()),
 			FixedSlots: int(d.GetFixedSlots()), Healthy: d.GetHealthy(), Message: d.GetMessage(), PhysicalDevices: []model.PhysicalDevice{},
 			NetworkPolicies: nz(d.GetNetworkPolicies()), GPUMode: d.GetGpuMode(), GPUSlots: int(d.GetGpuSlots()),
+			GPUFamilies: nz(d.GetGpuFamilies()),
 		}
 		for _, pd := range d.GetPhysicalDevices() {
 			di.PhysicalDevices = append(di.PhysicalDevices, model.PhysicalDevice{Serial: pd.GetSerial(), Family: pd.GetFamily(), Model: pd.GetModel(), Available: pd.GetAvailable()})
