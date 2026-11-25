@@ -49,6 +49,13 @@ No auth.
 }
 ```
 
+`GET /api/auth/me` additionally returns, for the caller only:
+- `measured`: `{running_devices, memory_used_mb, storage_used_mb, cpu_cores}`, what the caller's devices actually use right now (`usage` is what they reserve).
+- `remaining`: quota minus usage per limit (`machines`, `vcpus`, `ram_mb`, `storage_gb`, `phones`, `gpus`), `-1` = unlimited.
+
+### `GET /api/openapi.json`
+OpenAPI 3.1 description of this API (no authentication), meant for clients and AI assistants.
+
 ### `PUT /api/me/ssh-keys`
 `{"ssh_keys": ["ssh-ed25519 ..."]}` → updated user. These keys are added to every new device of the user.
 
@@ -214,7 +221,8 @@ Everything the create-device form needs in one call.
   "updated_at": "2026-11-22T16:01:10Z",
   "params": {},
   "network_policy": "internet",
-  "gpu": false
+  "gpu": false,
+  "usage": { "memory_used_mb": 1536, "storage_used_mb": 2048, "cpu_percent": 12.5, "cpu_cores": 1, "updated_at": "..." }
 }
 ```
 - `power`: desired power, `"running" | "stopped"` (the on/off switch).
@@ -245,6 +253,8 @@ Own devices; admins get all devices, and can filter with `?owner=<user id>` or `
 ```
 - `driver` / `node_id` empty = chosen by the scheduler.
 - `network_policy`: `internet` (default; private networks blocked by the node firewall) or `offline` (no outbound traffic, no DNS; the device stays reachable through its services). Only nodes whose driver supports the policy are used.
+- `usage` (device views): measured by the node, refreshed at most every 30 s. `cpu_percent` is the share of the whole node (0–100), `cpu_cores` the same in cores. RAM and CPU are 0 while the device isn't running.
+- Error responses are `{"error": "...", "code": "..."}`. The message names the relevant values, e.g. `not enough RAM: 8192 MB requested, 4096 MB free of 16384 MB` or `quota exceeded for RAM: 4096 MB requested, 6144 MB of your 8192 MB already used (2048 MB left)`.
 - `gpu`: share the node's GPU (VirGL, SR-IOV VF or render node, depending on the driver). Omitted = the template's default (`gpu` param `required`/`recommended`). Counts against `max_gpus`.
 - `services` omitted = template default services. Services not supported by template **and** driver → `400 validation`.
 - `power` defaults to `"running"`.

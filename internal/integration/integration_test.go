@@ -301,6 +301,7 @@ func (a *agent) status(id string, st agentv1.DeviceState, ready bool) {
 	a.t.Helper()
 	if err := a.stream.Send(&agentv1.AgentMessage{Msg: &agentv1.AgentMessage_DeviceStatus{DeviceStatus: &agentv1.DeviceStatus{
 		DeviceId: id, State: st, Ready: ready, InternalIp: "192.168.122.10", Message: "ok",
+		MemoryUsedMb: 1536, StorageUsedMb: 2048, CpuUsedPercent: 12.5,
 	}}}); err != nil {
 		a.t.Fatal(err)
 	}
@@ -431,6 +432,44 @@ func TestEndToEnd(t *testing.T) {
 		e.do("GET", "/api/devices/"+dev.ID, nil, &d)
 		return d["state"] == "running" && d["ready"] == true && d["internal_ip"] == "192.168.122.10"
 	})
+	// Measured usage: per device and summed in /auth/me (node: 8 cores -> 12.5% = 1 core).
+	var usage struct {
+		Usage struct {
+			MemoryUsedMB  int64   `json:"memory_used_mb"`
+			StorageUsedMB int64   `json:"storage_used_mb"`
+			CPUPercent    float64 `json:"cpu_percent"`
+			CPUCores      float64 `json:"cpu_cores"`
+		} `json:"usage"`
+	}
+	e.do("GET", "/api/devices/"+dev.ID, nil, &usage)
+	if u := usage.Usage; u.MemoryUsedMB != 1536 || u.StorageUsedMB != 2048 || u.CPUPercent != 12.5 || u.CPUCores != 1 {
+		t.Fatalf("device usage: %+v", u)
+	}
+	var self struct {
+		Measured struct {
+			RunningDevices int     `json:"running_devices"`
+			MemoryUsedMB   int64   `json:"memory_used_mb"`
+			CPUCores       float64 `json:"cpu_cores"`
+		} `json:"measured"`
+		Remaining struct {
+			Machines int `json:"machines"`
+		} `json:"remaining"`
+	}
+	e.do("GET", "/api/auth/me", nil, &self)
+	if self.Measured.RunningDevices != 1 || self.Measured.MemoryUsedMB != 1536 || self.Measured.CPUCores != 1 || self.Remaining.Machines != -1 {
+		t.Fatalf("self view: %+v", self)
+	}
+	var spec struct {
+		OpenAPI string         `json:"openapi"`
+		Paths   map[string]any `json:"paths"`
+	}
+	// Public: no session or token needed.
+	if code := e.doWith(http.DefaultClient, "GET", "/api/openapi.json", nil, &spec, nil); code != 200 {
+		t.Fatalf("openapi: %d", code)
+	}
+	if spec.OpenAPI != "3.1.0" || spec.Paths["/api/devices"] == nil {
+		t.Fatalf("openapi: %v %d paths", spec.OpenAPI, len(spec.Paths))
+	}
 
 	// --- power off via PATCH -> ApplyDevice with STOPPED
 	if code := e.do("PATCH", "/api/devices/"+dev.ID, map[string]any{"power": "stopped"}, nil); code != 200 {

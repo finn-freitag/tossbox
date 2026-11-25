@@ -3,6 +3,7 @@ package api
 
 import (
 	"context"
+	_ "embed"
 	"encoding/json"
 	"errors"
 	"io"
@@ -19,6 +20,11 @@ import (
 	"github.com/finn-freitag/tossbox/internal/store"
 	"github.com/finn-freitag/tossbox/internal/version"
 )
+
+// openapiSpec describes the API for clients and AI assistants.
+//
+//go:embed openapi.json
+var openapiSpec []byte
 
 const (
 	sessionCookie = "tossbox_session"
@@ -60,6 +66,11 @@ func (s *Server) Handler() http.Handler {
 
 	mux.HandleFunc("GET /healthz", s.healthz)
 	h("GET /api/info", s.info)
+	mux.HandleFunc("GET /api/openapi.json", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Cache-Control", "no-cache")
+		w.Write(openapiSpec)
+	})
 	h("POST /api/auth/login", s.loginHandler)
 	h("POST /api/auth/logout", s.logout)
 	auth("GET /api/auth/me", s.me)
@@ -335,7 +346,7 @@ func (s *Server) logout(w http.ResponseWriter, r *http.Request) error {
 }
 
 func (s *Server) me(w http.ResponseWriter, r *http.Request) error {
-	v, err := s.core.UserView(r.Context(), principal(r).User)
+	v, err := s.core.SelfView(r.Context(), principal(r).User)
 	if err != nil {
 		return err
 	}

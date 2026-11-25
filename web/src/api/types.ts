@@ -70,6 +70,7 @@ export interface User {
   quota: Quota
   usage: Usage
   created_at?: string
+  measured?: { running_devices: number; memory_used_mb: number; storage_used_mb: number; cpu_cores: number }
 }
 
 export interface ApiToken {
@@ -188,6 +189,8 @@ export interface Device {
   params: Record<string, string>
   network_policy: NetworkPolicy
   gpu: boolean
+  /** Measured usage reported by the node. */
+  usage?: { memory_used_mb: number; storage_used_mb: number; cpu_percent: number; cpu_cores: number; updated_at: string | null }
 }
 
 export interface CreateDeviceRequest {

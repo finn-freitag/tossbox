@@ -417,6 +417,7 @@ func (s *Service) applyStatus(ctx context.Context, d *store.Device, st *agentv1.
 	}
 	ok, err := s.store.UpdateDeviceStatus(ctx, d.ID, store.DeviceStatus{
 		State: state, Ready: st.GetReady(), Message: st.GetMessage(), InternalIP: st.GetInternalIp(), StorageUsedMB: st.GetStorageUsedMb(),
+		MemoryUsedMB: st.GetMemoryUsedMb(), CPUUsedPercent: st.GetCpuUsedPercent(),
 	})
 	if err != nil || !ok {
 		return

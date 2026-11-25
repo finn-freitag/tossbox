@@ -2,8 +2,8 @@ github.com/creack/pty v1.1.9/go.mod h1:oKZEueFk5CKHvIhNR5MUki03XCEU+Q6VDXinZuGJ3
 github.com/davecgh/go-spew v1.1.0/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/davecgh/go-spew v1.1.1 h1:vj9j/u1bqnvCEfJOwUhtlOARqs3+rkHYY13jYWTU97c=
 github.com/davecgh/go-spew v1.1.1/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
-github.com/finn-freitag/tb-proto v0.5.0 h1:15tlYbAC7UtrQMYmoJ5MLLpqypAan/v6tJhDIq4qSv0=
-github.com/finn-freitag/tb-proto v0.5.0/go.mod h1:HBz4usGET421vRtsQ9EFjenyM02Zwcpee0q1zuMVMAs=
+github.com/finn-freitag/tb-proto v0.6.0 h1:zXdgCrhq2nH4nmSkqaeqGXJHOq05JoZukmJpz1f/7JM=
+github.com/finn-freitag/tb-proto v0.6.0/go.mod h1:HBz4usGET421vRtsQ9EFjenyM02Zwcpee0q1zuMVMAs=
 github.com/golang/protobuf v1.5.4 h1:i7eJL8qZTpSEXOPTxNKhASYpMn+8e5Q6AdndVa1dWek=
 github.com/golang/protobuf v1.5.4/go.mod h1:lnTiLA8Wa4RWRcIUkrtSVa5nRhsEGBg48fD6rSs7xps=
 github.com/google/go-cmp v0.7.0 h1:wk8382ETsv4JYUZwIsn6YpYiWiBsYLSJiTsyBybVuN8=

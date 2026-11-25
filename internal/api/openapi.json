@@ -1,0 +1,1388 @@
+{
+ "openapi": "3.1.0",
+ "info": {
+  "title": "Tossbox API",
+  "version": "1",
+  "description": "Self-hosted throwaway devices. Authenticate with `Authorization: Bearer tbt_...` (API token from the profile). Typical flow: GET /api/auth/me (limits, usage, remaining) -> GET /api/create-options (templates, free capacity) -> POST /api/devices -> poll GET /api/devices/{id} until state=running and ready=true -> use services[].connect -> DELETE. Errors are {error, code}; the message names the relevant values (requested vs. free/allowed)."
+ },
+ "servers": [
+  {
+   "url": "/"
+  }
+ ],
+ "components": {
+  "securitySchemes": {
+   "bearer": {
+    "type": "http",
+    "scheme": "bearer"
+   }
+  },
+  "schemas": {
+   "Error": {
+    "type": "object",
+    "properties": {
+     "error": {
+      "type": "string",
+      "description": "Human readable message with the relevant values (e.g. requested and free RAM)"
+     },
+     "code": {
+      "type": "string",
+      "description": "validation | unauthorized | forbidden | not_found | conflict | quota_exceeded | no_capacity | internal"
+     }
+    },
+    "required": [
+     "error",
+     "code"
+    ]
+   },
+   "Resources": {
+    "type": "object",
+    "properties": {
+     "vcpus": {
+      "type": "integer"
+     },
+     "cpu_cap_percent": {
+      "type": "integer",
+      "description": "Hard cap as share of the node, 0 = none"
+     },
+     "ram_mb": {
+      "type": "integer"
+     },
+     "storage_gb": {
+      "type": "integer"
+     }
+    }
+   },
+   "Quota": {
+    "type": "object",
+    "properties": {
+     "max_machines": {
+      "type": "integer",
+      "description": "0 = unlimited"
+     },
+     "max_vcpus": {
+      "type": "integer",
+      "description": "0 = unlimited"
+     },
+     "max_ram_mb": {
+      "type": "integer",
+      "description": "0 = unlimited"
+     },
+     "max_storage_gb": {
+      "type": "integer",
+      "description": "0 = unlimited"
+     },
+     "max_phones": {
+      "type": "integer",
+      "description": "0 = unlimited"
+     },
+     "max_gpus": {
+      "type": "integer",
+      "description": "0 = unlimited"
+     },
+     "max_ttl_hours": {
+      "type": "integer",
+      "description": "0 = unlimited"
+     },
+     "allowed_drivers": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      },
+      "description": "empty = all allowed"
+     },
+     "allowed_templates": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      },
+      "description": "empty = all allowed"
+     },
+     "allowed_license_pools": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      },
+      "description": "empty = all allowed"
+     },
+     "allowed_exposures": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      },
+      "description": "empty = all allowed"
+     }
+    }
+   },
+   "Usage": {
+    "type": "object",
+    "properties": {
+     "machines": {
+      "type": "integer"
+     },
+     "vcpus": {
+      "type": "integer"
+     },
+     "ram_mb": {
+      "type": "integer"
+     },
+     "storage_gb": {
+      "type": "integer"
+     },
+     "phones": {
+      "type": "integer"
+     },
+     "gpus": {
+      "type": "integer"
+     }
+    },
+    "description": "Reserved (allocated) resources of the user's devices"
+   },
+   "Remaining": {
+    "type": "object",
+    "properties": {
+     "machines": {
+      "type": "integer",
+      "description": "-1 = unlimited"
+     },
+     "vcpus": {
+      "type": "integer",
+      "description": "-1 = unlimited"
+     },
+     "ram_mb": {
+      "type": "integer",
+      "description": "-1 = unlimited"
+     },
+     "storage_gb": {
+      "type": "integer",
+      "description": "-1 = unlimited"
+     },
+     "phones": {
+      "type": "integer",
+      "description": "-1 = unlimited"
+     },
+     "gpus": {
+      "type": "integer",
+      "description": "-1 = unlimited"
+     }
+    },
+    "description": "Quota minus usage"
+   },
+   "MeasuredUsage": {
+    "type": "object",
+    "properties": {
+     "running_devices": {
+      "type": "integer"
+     },
+     "memory_used_mb": {
+      "type": "integer"
+     },
+     "storage_used_mb": {
+      "type": "integer"
+     },
+     "cpu_cores": {
+      "type": "number",
+      "description": "CPU cores in use, summed over nodes"
+     }
+    },
+    "description": "What the user's devices actually use right now"
+   },
+   "Me": {
+    "type": "object",
+    "properties": {
+     "id": {
+      "type": "string"
+     },
+     "username": {
+      "type": "string"
+     },
+     "role": {
+      "type": "string",
+      "description": "admin | user"
+     },
+     "ssh_keys": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      }
+     },
+     "adb_keys": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      }
+     },
+     "quota": {
+      "$ref": "#/components/schemas/Quota"
+     },
+     "usage": {
+      "$ref": "#/components/schemas/Usage"
+     },
+     "measured": {
+      "$ref": "#/components/schemas/MeasuredUsage"
+     },
+     "remaining": {
+      "$ref": "#/components/schemas/Remaining"
+     },
+     "created_at": {
+      "type": "string",
+      "format": "date-time"
+     }
+    }
+   },
+   "Template": {
+    "type": "object",
+    "properties": {
+     "id": {
+      "type": "string"
+     },
+     "name": {
+      "type": "string"
+     },
+     "description": {
+      "type": "string"
+     },
+     "family": {
+      "type": "string",
+      "description": "linux | windows | android | macos | ios | chromeos | browser"
+     },
+     "version": {
+      "type": "string"
+     },
+     "compatible_drivers": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      }
+     },
+     "available_drivers": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      },
+      "description": "Drivers some online node can run right now"
+     },
+     "supported_services": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      }
+     },
+     "default_services": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      }
+     },
+     "min_resources": {
+      "$ref": "#/components/schemas/Resources"
+     },
+     "default_resources": {
+      "$ref": "#/components/schemas/Resources"
+     },
+     "license": {
+      "type": "boolean"
+     },
+     "gpu": {
+      "type": "string",
+      "description": "required | recommended | empty"
+     }
+    }
+   },
+   "CreateOptions": {
+    "type": "object",
+    "properties": {
+     "templates": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/Template"
+      }
+     },
+     "nodes": {
+      "type": "array",
+      "items": {
+       "type": "object",
+       "properties": {
+        "id": {
+         "type": "string"
+        },
+        "name": {
+         "type": "string"
+        },
+        "status": {
+         "type": "string"
+        },
+        "drivers": {
+         "type": "array",
+         "items": {
+          "type": "string"
+         }
+        },
+        "free": {
+         "type": "object",
+         "properties": {
+          "vcpus": {
+           "type": "integer"
+          },
+          "cpu_percent": {
+           "type": "number"
+          },
+          "ram_mb": {
+           "type": "integer"
+          },
+          "storage_gb": {
+           "type": "integer"
+          }
+         }
+        },
+        "fixed_slots_free": {
+         "type": "object",
+         "properties": {},
+         "description": "driver -> free slots"
+        },
+        "host_cores": {
+         "type": "integer"
+        }
+       }
+      }
+     },
+     "quota": {
+      "$ref": "#/components/schemas/Quota"
+     },
+     "usage": {
+      "$ref": "#/components/schemas/Usage"
+     },
+     "allowed_exposures": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      }
+     },
+     "driver_services": {
+      "type": "object",
+      "properties": {},
+      "description": "driver -> services online nodes offer"
+     },
+     "driver_features": {
+      "type": "object",
+      "properties": {},
+      "description": "driver -> {network_policies, gpu, gpu_families}"
+     },
+     "default_ttl_hours": {
+      "type": "integer"
+     },
+     "max_ttl_hours": {
+      "type": "integer"
+     }
+    }
+   },
+   "Service": {
+    "type": "object",
+    "properties": {
+     "name": {
+      "type": "string",
+      "description": "ssh | rdp | vnc | adb | http | https"
+     },
+     "port": {
+      "type": "integer",
+      "description": "public port"
+     },
+     "internal_port": {
+      "type": "integer"
+     },
+     "username": {
+      "type": "string"
+     },
+     "password": {
+      "type": "string"
+     },
+     "connect": {
+      "type": "string",
+      "description": "ready-to-use connect string"
+     }
+    }
+   },
+   "DeviceUsage": {
+    "type": "object",
+    "properties": {
+     "memory_used_mb": {
+      "type": "integer"
+     },
+     "storage_used_mb": {
+      "type": "integer"
+     },
+     "cpu_percent": {
+      "type": "number",
+      "description": "share of the whole node, 0-100"
+     },
+     "cpu_cores": {
+      "type": "number"
+     },
+     "updated_at": {
+      "type": "string",
+      "format": "date-time",
+      "nullable": true
+     }
+    },
+    "description": "Measured usage reported by the node (refreshed at most every 30 s; RAM/CPU are 0 while not running)"
+   },
+   "Device": {
+    "type": "object",
+    "properties": {
+     "id": {
+      "type": "string"
+     },
+     "name": {
+      "type": "string"
+     },
+     "hostname": {
+      "type": "string"
+     },
+     "fqdn": {
+      "type": "string"
+     },
+     "owner": {
+      "type": "object",
+      "properties": {
+       "id": {
+        "type": "string"
+       },
+       "username": {
+        "type": "string"
+       }
+      }
+     },
+     "node": {
+      "type": "object",
+      "properties": {
+       "id": {
+        "type": "string"
+       },
+       "name": {
+        "type": "string"
+       }
+      }
+     },
+     "driver": {
+      "type": "string"
+     },
+     "template": {
+      "type": "object",
+      "properties": {
+       "id": {
+        "type": "string"
+       },
+       "name": {
+        "type": "string"
+       },
+       "family": {
+        "type": "string"
+       }
+      }
+     },
+     "resources": {
+      "$ref": "#/components/schemas/Resources"
+     },
+     "usage": {
+      "$ref": "#/components/schemas/DeviceUsage"
+     },
+     "power": {
+      "type": "string",
+      "description": "running | stopped"
+     },
+     "state": {
+      "type": "string",
+      "description": "pending | provisioning | running | stopping | stopped | failed | destroying | offline"
+     },
+     "ready": {
+      "type": "boolean",
+      "description": "readiness check passed (e.g. SSH answers)"
+     },
+     "status_message": {
+      "type": "string"
+     },
+     "internal_ip": {
+      "type": "string"
+     },
+     "exposure": {
+      "type": "string"
+     },
+     "allowlist": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      }
+     },
+     "services": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/Service"
+      }
+     },
+     "network_policy": {
+      "type": "string"
+     },
+     "gpu": {
+      "type": "boolean"
+     },
+     "ttl_hours": {
+      "type": "integer"
+     },
+     "expires_at": {
+      "type": "string",
+      "format": "date-time",
+      "nullable": true
+     },
+     "created_at": {
+      "type": "string",
+      "format": "date-time"
+     }
+    }
+   },
+   "CreateDevice": {
+    "type": "object",
+    "properties": {
+     "name": {
+      "type": "string",
+      "description": "becomes the hostname slug"
+     },
+     "template_id": {
+      "type": "string"
+     },
+     "driver": {
+      "type": "string",
+      "description": "empty = scheduler picks"
+     },
+     "node_id": {
+      "type": "string"
+     },
+     "resources": {
+      "$ref": "#/components/schemas/Resources"
+     },
+     "services": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      },
+      "description": "omitted = template defaults"
+     },
+     "exposure": {
+      "type": "string",
+      "description": "public (default) | tailscale | none"
+     },
+     "allowlist": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      },
+      "description": "IPs/CIDRs allowed to connect"
+     },
+     "ttl_hours": {
+      "type": "integer",
+      "description": "hours from creation, 0 = never (API tokens may be required to set > 0)"
+     },
+     "license": {
+      "type": "object",
+      "properties": {
+       "mode": {
+        "type": "string",
+        "description": "none | user_key | pool"
+       },
+       "pool": {
+        "type": "string"
+       },
+       "user_key": {
+        "type": "string"
+       }
+      }
+     },
+     "power": {
+      "type": "string"
+     },
+     "network_policy": {
+      "type": "string",
+      "description": "internet (default) | offline"
+     },
+     "gpu": {
+      "type": "boolean",
+      "description": "omitted = template default"
+     },
+     "params": {
+      "type": "object",
+      "properties": {},
+      "description": "driver params, e.g. backend"
+     }
+    },
+    "required": [
+     "name",
+     "template_id"
+    ]
+   },
+   "PatchDevice": {
+    "type": "object",
+    "properties": {
+     "power": {
+      "type": "string",
+      "description": "running | stopped"
+     },
+     "name": {
+      "type": "string"
+     },
+     "ttl_hours": {
+      "type": "integer"
+     },
+     "allowlist": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      }
+     }
+    }
+   }
+  }
+ },
+ "security": [
+  {
+   "bearer": []
+  }
+ ],
+ "paths": {
+  "/api/info": {
+   "get": {
+    "summary": "Version, base domain, Guacamole",
+    "security": [],
+    "responses": {
+     "200": {
+      "description": "Info",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {}
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Error"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/openapi.json": {
+   "get": {
+    "summary": "This document",
+    "security": [],
+    "responses": {
+     "200": {
+      "description": "OpenAPI 3.1"
+     },
+     "default": {
+      "description": "Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Error"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/auth/me": {
+   "get": {
+    "summary": "Own user: quota, reserved usage, measured usage, remaining quota",
+    "responses": {
+     "200": {
+      "description": "Me",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Me"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Error"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/me/ssh-keys": {
+   "put": {
+    "summary": "Replace own SSH keys (copied to new devices)",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object",
+        "properties": {
+         "ssh_keys": {
+          "type": "array",
+          "items": {
+           "type": "string"
+          }
+         }
+        }
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "Me",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Me"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Error"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/me/adb-keys": {
+   "put": {
+    "summary": "Replace own adb public keys (Android devices)",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object",
+        "properties": {
+         "adb_keys": {
+          "type": "array",
+          "items": {
+           "type": "string"
+          }
+         }
+        }
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "Me",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Me"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Error"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/me/tokens": {
+   "get": {
+    "summary": "List own API tokens",
+    "responses": {
+     "200": {
+      "description": "Tokens",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "array",
+         "items": {
+          "type": "object",
+          "properties": {}
+         }
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Error"
+        }
+       }
+      }
+     }
+    }
+   },
+   "post": {
+    "summary": "Create an API token (returned once)",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object",
+        "properties": {
+         "name": {
+          "type": "string"
+         },
+         "expires_in_days": {
+          "type": "integer"
+         }
+        }
+       }
+      }
+     }
+    },
+    "responses": {
+     "201": {
+      "description": "Token",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {}
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Error"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/me/tokens/{id}": {
+   "delete": {
+    "summary": "Delete an API token",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "format": "uuid"
+      }
+     }
+    ],
+    "responses": {
+     "204": {
+      "description": "Deleted"
+     },
+     "default": {
+      "description": "Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Error"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/templates": {
+   "get": {
+    "summary": "Templates the caller may use",
+    "responses": {
+     "200": {
+      "description": "Templates",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "array",
+         "items": {
+          "$ref": "#/components/schemas/Template"
+         }
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Error"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/create-options": {
+   "get": {
+    "summary": "Everything needed to create a device: templates, nodes with free capacity, quota, exposures, driver services and features",
+    "responses": {
+     "200": {
+      "description": "Options",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/CreateOptions"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Error"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/devices": {
+   "get": {
+    "summary": "List own devices (admins: all, ?all=false for own)",
+    "responses": {
+     "200": {
+      "description": "Devices",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "array",
+         "items": {
+          "$ref": "#/components/schemas/Device"
+         }
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Error"
+        }
+       }
+      }
+     }
+    }
+   },
+   "post": {
+    "summary": "Create a device",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/CreateDevice"
+       }
+      }
+     }
+    },
+    "responses": {
+     "201": {
+      "description": "Created",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Device"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Error"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/devices/{id}": {
+   "get": {
+    "summary": "Get a device",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "format": "uuid"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Device",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Device"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Error"
+        }
+       }
+      }
+     }
+    }
+   },
+   "patch": {
+    "summary": "Power on/off, rename, change TTL or allowlist",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "format": "uuid"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/PatchDevice"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "Device",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Device"
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Error"
+        }
+       }
+      }
+     }
+    }
+   },
+   "delete": {
+    "summary": "Delete a device (asynchronous)",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "format": "uuid"
+      }
+     }
+    ],
+    "responses": {
+     "202": {
+      "description": "Accepted"
+     },
+     "default": {
+      "description": "Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Error"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/devices/{id}/rdp": {
+   "get": {
+    "summary": ".rdp file",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "format": "uuid"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "RDP file"
+     },
+     "default": {
+      "description": "Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Error"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/devices/{id}/ssh-config": {
+   "get": {
+    "summary": "OpenSSH config snippet",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "format": "uuid"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Text"
+     },
+     "default": {
+      "description": "Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Error"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/devices/{id}/guacamole": {
+   "post": {
+    "summary": "Short-lived Guacamole login URL",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "format": "uuid"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object",
+        "properties": {
+         "service": {
+          "type": "string"
+         }
+        }
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "URL",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "url": {
+           "type": "string"
+          }
+         }
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Error"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/events": {
+   "get": {
+    "summary": "Server-sent events: device, device_deleted, node",
+    "responses": {
+     "200": {
+      "description": "text/event-stream"
+     },
+     "default": {
+      "description": "Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Error"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/nodes": {
+   "get": {
+    "summary": "Admin: nodes with capabilities and measured usage",
+    "responses": {
+     "200": {
+      "description": "Nodes",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "array",
+         "items": {
+          "type": "object",
+          "properties": {}
+         }
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Error"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/users": {
+   "get": {
+    "summary": "Admin: users",
+    "responses": {
+     "200": {
+      "description": "Users",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "array",
+         "items": {
+          "type": "object",
+          "properties": {}
+         }
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Error"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/settings": {
+   "get": {
+    "summary": "Admin: settings",
+    "responses": {
+     "200": {
+      "description": "Settings",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {}
+        }
+       }
+      }
+     },
+     "default": {
+      "description": "Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Error"
+        }
+       }
+      }
+     }
+    }
+   }
+  }
+ }
+}

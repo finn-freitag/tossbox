@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/binary"
 	"errors"
+	"math"
 	"strings"
 	"time"
 
@@ -25,6 +26,68 @@ type UserView struct {
 	Quota     model.Quota `json:"quota"`
 	Usage     model.Usage `json:"usage"`
 	CreatedAt time.Time   `json:"created_at"`
+	// Measured is what the user's devices actually use right now
+	// (Usage is what they reserve). Only set for the caller's own view.
+	Measured *MeasuredUsage `json:"measured,omitempty"`
+	// Remaining is quota minus usage per limit; -1 = unlimited.
+	Remaining *Remaining `json:"remaining,omitempty"`
+}
+
+// MeasuredUsage sums the measured usage of a user's devices.
+type MeasuredUsage struct {
+	RunningDevices int     `json:"running_devices"`
+	MemoryUsedMB   int64   `json:"memory_used_mb"`
+	StorageUsedMB  int64   `json:"storage_used_mb"`
+	CPUCores       float64 `json:"cpu_cores"` // cores in use, summed over nodes
+}
+
+// Remaining is what the user may still allocate (-1 = unlimited).
+type Remaining struct {
+	Machines  int   `json:"machines"`
+	VCPUs     int   `json:"vcpus"`
+	RAMMB     int64 `json:"ram_mb"`
+	StorageGB int64 `json:"storage_gb"`
+	Phones    int   `json:"phones"`
+	GPUs      int   `json:"gpus"`
+}
+
+func left[T int | int64](limit, used T) T {
+	if limit <= 0 {
+		return -1
+	}
+	return max(limit-used, 0)
+}
+
+// SelfView is UserView plus measured usage and remaining quota (/api/auth/me).
+func (s *Service) SelfView(ctx context.Context, u *store.User) (*UserView, error) {
+	v, err := s.UserView(ctx, u)
+	if err != nil {
+		return nil, err
+	}
+	devs, err := s.store.ListDevices(ctx, u.ID)
+	if err != nil {
+		return nil, err
+	}
+	nodes := s.nodeIndex(ctx)
+	m := &MeasuredUsage{}
+	for _, d := range devs {
+		dv := s.viewWith(d, nodes)
+		if dv.State == "running" {
+			m.RunningDevices++
+		}
+		m.MemoryUsedMB += dv.Usage.MemoryUsedMB
+		m.StorageUsedMB += dv.Usage.StorageUsedMB
+		m.CPUCores += dv.Usage.CPUCores
+	}
+	m.CPUCores = math.Round(m.CPUCores*100) / 100
+	q, us := v.Quota, v.Usage
+	v.Measured = m
+	v.Remaining = &Remaining{
+		Machines: left(q.MaxMachines, us.Machines), VCPUs: left(q.MaxVCPUs, us.VCPUs),
+		RAMMB: left(q.MaxRAMMB, us.RAMMB), StorageGB: left(q.MaxStorageGB, us.StorageGB),
+		Phones: left(q.MaxPhones, us.Phones), GPUs: left(q.MaxGPUs, us.GPUs),
+	}
+	return v, nil
 }
 
 // HashPassword hashes a password with bcrypt.

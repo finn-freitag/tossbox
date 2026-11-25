@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math"
 	"strconv"
 	"strings"
 	"time"
@@ -76,12 +77,25 @@ type DeviceView struct {
 	Params        map[string]string `json:"params"`
 	NetworkPolicy string            `json:"network_policy"`
 	GPU           bool              `json:"gpu"`
+	// Usage is what the device measurably uses (resources is what it reserves).
+	Usage DeviceUsage `json:"usage"`
+}
+
+// DeviceUsage is the measured usage of a device, reported by its node
+// (refreshed at most every 30 s; RAM and CPU are 0 while it isn't running).
+type DeviceUsage struct {
+	MemoryUsedMB  int64      `json:"memory_used_mb"`
+	StorageUsedMB int64      `json:"storage_used_mb"`
+	CPUPercent    float64    `json:"cpu_percent"` // share of the whole node, 0-100
+	CPUCores      float64    `json:"cpu_cores"`   // the same as cores in use
+	UpdatedAt     *time.Time `json:"updated_at"`
 }
 
 type nodeInfo struct {
 	name    string
 	address string
 	online  bool
+	cores   int
 }
 
 func (s *Service) nodeIndex(ctx context.Context) map[string]nodeInfo {
@@ -91,7 +105,7 @@ func (s *Service) nodeIndex(ctx context.Context) map[string]nodeInfo {
 		return out
 	}
 	for _, n := range nodes {
-		out[n.ID] = nodeInfo{name: n.Name, address: n.Address, online: s.link.Online(n.ID)}
+		out[n.ID] = nodeInfo{name: n.Name, address: n.Address, online: s.link.Online(n.ID), cores: parseCaps(n.Capabilities).HostCores}
 	}
 	return out
 }
@@ -118,6 +132,13 @@ func (s *Service) viewWith(d *store.Device, nodes map[string]nodeInfo) *DeviceVi
 	}
 	if v.License.Mode == "" {
 		v.License.Mode = "none"
+	}
+	v.Usage = DeviceUsage{StorageUsedMB: d.StorageUsedMB, UpdatedAt: d.UsageAt}
+	if d.State == "running" {
+		v.Usage.MemoryUsedMB, v.Usage.CPUPercent = d.MemoryUsedMB, d.CPUUsedPercent
+		if n, ok := nodes[d.NodeID]; ok && n.cores > 0 {
+			v.Usage.CPUCores = math.Round(d.CPUUsedPercent*float64(n.cores)) / 100
+		}
 	}
 	if n, ok := nodes[d.NodeID]; ok {
 		v.Node = &Ref{ID: d.NodeID, Name: n.name}
@@ -350,7 +371,7 @@ func snapshot(n *store.Node, devs []scheduler.DeviceLoad, online bool) scheduler
 		LocalImages:   c.LocalImages,
 	}
 	for _, d := range c.Drivers {
-		sn.Drivers[d.Name] = scheduler.DriverCaps{Families: d.Families, Services: d.Services, FixedSlots: d.FixedSlots, Healthy: d.Healthy,
+		sn.Drivers[d.Name] = scheduler.DriverCaps{Families: d.Families, Services: d.Services, FixedSlots: d.FixedSlots, Healthy: d.Healthy, Message: d.Message,
 			NetworkPolicies: d.NetworkPolicies, GPUMode: d.GPUMode, GPUSlots: d.GPUSlots, GPUFamilies: d.GPUFamilies}
 	}
 	for _, p := range c.LicensePools {

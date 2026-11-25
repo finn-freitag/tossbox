@@ -7,7 +7,7 @@ import { qk, useMe, useTokens } from '../api/hooks'
 import type { CreatedToken } from '../api/types'
 import { Confirm, CopyButton, Empty, ErrorBox, Field, Loading, Modal, useToast } from '../components/ui'
 import { Quotas } from '../components/Quotas'
-import { errorMessage, fmtDate, fmtRelative } from '../util'
+import { errorMessage, fmtDate, fmtMB, fmtRelative } from '../util'
 
 export function ProfilePage() {
   const me = useMe()
@@ -22,6 +22,12 @@ export function ProfilePage() {
             Signed in as <strong>{me.data.username}</strong> ({me.data.role})
           </p>
           <Quotas quota={me.data.quota} usage={me.data.usage} />
+          {me.data.measured && me.data.measured.running_devices > 0 && (
+            <p className="muted small">
+              In use right now: {me.data.measured.running_devices} running device{me.data.measured.running_devices === 1 ? '' : 's'},{' '}
+              {fmtMB(me.data.measured.memory_used_mb)} RAM, {me.data.measured.cpu_cores} CPU cores, {fmtMB(me.data.measured.storage_used_mb)} disk
+            </p>
+          )}
         </div>
       </div>
       <div className="stack">

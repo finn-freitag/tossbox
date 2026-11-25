@@ -36,6 +36,9 @@ type Device struct {
 	StatusMessage  string
 	InternalIP     string
 	StorageUsedMB  int64
+	MemoryUsedMB   int64
+	CPUUsedPercent float64
+	UsageAt        *time.Time
 	Exposure       string
 	Allowlist      []string
 	LicenseMode    string
@@ -71,7 +74,7 @@ const deviceSelect = `SELECT d.id, d.owner_id, u.username, coalesce(d.node_id::t
 	d.template_family, d.template_spec, d.name, d.hostname, d.vcpus, d.cpu_cap_percent, d.ram_mb, d.storage_gb, d.power,
 	d.state, d.ready, d.status_message, d.internal_ip, d.storage_used_mb, d.exposure, d.allowlist, d.license_mode,
 	coalesce(l.pool, ''), d.license_key_enc, d.username, d.password_enc, d.ssh_keys, d.params, d.ttl_hours, d.expires_at,
-	d.revision, d.deleting, d.created_at, d.updated_at, d.adb_keys, d.network_policy, d.gpu,
+	d.revision, d.deleting, d.created_at, d.updated_at, d.adb_keys, d.network_policy, d.gpu, d.memory_used_mb, d.cpu_used_percent, d.usage_at,
 	coalesce((SELECT json_agg(json_build_array(s.name, s.internal_port, s.public_port) ORDER BY s.public_port)
 	          FROM device_services s WHERE s.device_id = d.id), '[]')
 	FROM devices d JOIN users u ON u.id = d.owner_id LEFT JOIN license_leases l ON l.device_id = d.id`
@@ -83,7 +86,7 @@ func scanDevice(row interface{ Scan(...any) error }) (*Device, error) {
 		&d.TemplateFamily, &d.TemplateSpec, &d.Name, &d.Hostname, &d.Res.VCPUs, &d.Res.CPUCapPercent, &d.Res.RAMMB, &d.Res.StorageGB, &d.Power,
 		&d.State, &d.Ready, &d.StatusMessage, &d.InternalIP, &d.StorageUsedMB, &d.Exposure, &d.Allowlist, &d.LicenseMode,
 		&d.LicensePool, &d.LicenseKeyEnc, &d.Username, &d.PasswordEnc, &d.SSHKeys, &d.Params, &d.TTLHours, &d.ExpiresAt,
-		&d.Revision, &d.Deleting, &d.CreatedAt, &d.UpdatedAt, &d.ADBKeys, &d.NetworkPolicy, &d.GPU, &svcs)
+		&d.Revision, &d.Deleting, &d.CreatedAt, &d.UpdatedAt, &d.ADBKeys, &d.NetworkPolicy, &d.GPU, &d.MemoryUsedMB, &d.CPUUsedPercent, &d.UsageAt, &svcs)
 	if err != nil {
 		return nil, mapErr(err)
 	}
@@ -221,18 +224,21 @@ func (s *Store) InsertDevice(ctx context.Context, d *Device) error {
 
 // DeviceStatus is the actual-state part of a device reported by the agent.
 type DeviceStatus struct {
-	State         string
-	Ready         bool
-	Message       string
-	InternalIP    string
-	StorageUsedMB int64
+	State          string
+	Ready          bool
+	Message        string
+	InternalIP     string
+	StorageUsedMB  int64
+	MemoryUsedMB   int64
+	CPUUsedPercent float64
 }
 
 // UpdateDeviceStatus stores the agent-reported status. It returns false if
 // the device doesn't exist (any more).
 func (s *Store) UpdateDeviceStatus(ctx context.Context, id string, st DeviceStatus) (bool, error) {
-	tag, err := s.pool.Exec(ctx, `UPDATE devices SET state=$2, ready=$3, status_message=$4, internal_ip=$5, storage_used_mb=$6, updated_at=now() WHERE id=$1`,
-		id, st.State, st.Ready, st.Message, st.InternalIP, st.StorageUsedMB)
+	tag, err := s.pool.Exec(ctx, `UPDATE devices SET state=$2, ready=$3, status_message=$4, internal_ip=$5, storage_used_mb=$6,
+		memory_used_mb=$7, cpu_used_percent=$8, usage_at=now(), updated_at=now() WHERE id=$1`,
+		id, st.State, st.Ready, st.Message, st.InternalIP, st.StorageUsedMB, st.MemoryUsedMB, st.CPUUsedPercent)
 	if err != nil {
 		return false, err
 	}

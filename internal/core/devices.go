@@ -113,18 +113,18 @@ func (s *Service) CreateDevice(ctx context.Context, p Principal, req CreateDevic
 	}
 	tpl, ok := s.catalog.Get(req.TemplateID)
 	if !ok {
-		return nil, model.Errf(model.CodeValidation, "unknown template %q", req.TemplateID)
+		return nil, model.Errf(model.CodeValidation, "unknown template %q (GET /api/templates lists the available ones)", req.TemplateID)
 	}
 	if !model.Allows(u.Quota.AllowedTemplates, tpl.ID) {
-		return nil, model.Errf(model.CodeForbidden, "you may not use template %s", tpl.ID)
+		return nil, model.Errf(model.CodeForbidden, "you may not use template %s (allowed: %s)", tpl.ID, strings.Join(u.Quota.AllowedTemplates, ", "))
 	}
 	var drivers []string
 	if req.Driver != "" {
 		if _, ok := tpl.Images[req.Driver]; !ok {
-			return nil, model.Errf(model.CodeValidation, "template %s doesn't support driver %s", tpl.ID, req.Driver)
+			return nil, model.Errf(model.CodeValidation, "template %s doesn't support driver %s (supported: %s)", tpl.ID, req.Driver, strings.Join(tpl.Drivers(), ", "))
 		}
 		if !model.Allows(u.Quota.AllowedDrivers, req.Driver) {
-			return nil, model.Errf(model.CodeForbidden, "you may not use driver %s", req.Driver)
+			return nil, model.Errf(model.CodeForbidden, "you may not use driver %s (allowed: %s)", req.Driver, strings.Join(u.Quota.AllowedDrivers, ", "))
 		}
 		drivers = []string{req.Driver}
 	} else {
@@ -154,11 +154,11 @@ func (s *Service) CreateDevice(ctx context.Context, p Principal, req CreateDevic
 	}
 	resources := model.Resources{VCPUs: res.VCPUs, CPUCapPercent: res.CPUCapPercent, RAMMB: res.RAMMB, StorageGB: res.StorageGB}
 	if resources.VCPUs < tpl.MinResources.VCPUs || resources.RAMMB < tpl.MinResources.RAMMB || resources.StorageGB < tpl.MinResources.StorageGB {
-		return nil, model.Errf(model.CodeValidation, "resources below template minimum (%d vCPU, %d MB RAM, %d GB storage)",
-			tpl.MinResources.VCPUs, tpl.MinResources.RAMMB, tpl.MinResources.StorageGB)
+		return nil, model.Errf(model.CodeValidation, "resources below the minimum of template %s: requested %d vCPU, %d MB RAM, %d GB storage; minimum %d vCPU, %d MB RAM, %d GB storage",
+			tpl.ID, resources.VCPUs, resources.RAMMB, resources.StorageGB, tpl.MinResources.VCPUs, tpl.MinResources.RAMMB, tpl.MinResources.StorageGB)
 	}
 	if resources.CPUCapPercent < 0 || resources.CPUCapPercent > 100 {
-		return nil, model.Errf(model.CodeValidation, "cpu_cap_percent must be between 0 and 100")
+		return nil, model.Errf(model.CodeValidation, "cpu_cap_percent must be between 0 and 100, got %d", resources.CPUCapPercent)
 	}
 
 	var services []string
@@ -167,10 +167,10 @@ func (s *Service) CreateDevice(ctx context.Context, p Principal, req CreateDevic
 	} else {
 		for _, svc := range *req.Services {
 			if !model.IsService(svc) {
-				return nil, model.Errf(model.CodeValidation, "unknown service %q", svc)
+				return nil, model.Errf(model.CodeValidation, "unknown service %q (known: %s)", svc, strings.Join(model.Services, ", "))
 			}
 			if !tpl.Supports(svc) {
-				return nil, model.Errf(model.CodeValidation, "template %s doesn't support service %s", tpl.ID, svc)
+				return nil, model.Errf(model.CodeValidation, "template %s doesn't support service %s (supported: %s)", tpl.ID, svc, strings.Join(tpl.SupportedServices, ", "))
 			}
 			if !slices.Contains(services, svc) {
 				services = append(services, svc)
@@ -182,10 +182,10 @@ func (s *Service) CreateDevice(ctx context.Context, p Principal, req CreateDevic
 		req.Exposure = model.ExposurePublic
 	}
 	if !slices.Contains(model.Exposures, req.Exposure) {
-		return nil, model.Errf(model.CodeValidation, "exposure must be public, tailscale or none")
+		return nil, model.Errf(model.CodeValidation, "exposure must be public, tailscale or none, got %q", req.Exposure)
 	}
 	if !model.Allows(u.Quota.AllowedExposures, req.Exposure) {
-		return nil, model.Errf(model.CodeForbidden, "you may not use exposure %s", req.Exposure)
+		return nil, model.Errf(model.CodeForbidden, "you may not use exposure %s (allowed: %s)", req.Exposure, strings.Join(u.Quota.AllowedExposures, ", "))
 	}
 	if req.Exposure == model.ExposureTailscale && s.cfg.GatewayTailscaleAddress == "" {
 		return nil, model.Errf(model.CodeValidation, "tailscale exposure is not configured on this dashboard (TOSSBOX_GATEWAY_TAILSCALE_ADDRESS)")
@@ -204,7 +204,7 @@ func (s *Service) CreateDevice(ctx context.Context, p Principal, req CreateDevic
 		req.NetworkPolicy = model.NetworkInternet
 	}
 	if !slices.Contains(model.NetworkPolicies, req.NetworkPolicy) {
-		return nil, model.Errf(model.CodeValidation, "network_policy must be internet or offline")
+		return nil, model.Errf(model.CodeValidation, "network_policy must be internet or offline, got %q", req.NetworkPolicy)
 	}
 	gpuMode := tpl.Params["gpu"] // required | recommended | ""
 	wantGPU := gpuMode == "required" || gpuMode == "recommended"
@@ -246,7 +246,7 @@ func (s *Service) CreateDevice(ctx context.Context, p Principal, req CreateDevic
 				return nil, model.Errf(model.CodeValidation, "license pool is required")
 			}
 			if !slices.Contains(u.Quota.AllowedLicensePools, lic.Pool) && !p.IsAdmin() {
-				return nil, model.Errf(model.CodeForbidden, "you may not use license pool %s", lic.Pool)
+				return nil, model.Errf(model.CodeForbidden, "you may not use license pool %s (allowed: %s)", lic.Pool, strings.Join(u.Quota.AllowedLicensePools, ", "))
 			}
 			licensePool = lic.Pool
 		}
@@ -324,7 +324,8 @@ func (s *Service) CreateDevice(ctx context.Context, p Principal, req CreateDevic
 	}
 	pts, err := s.ports.Allocate(used, len(services))
 	if err != nil {
-		return nil, model.Errf(model.CodeNoCapacity, "no free ports left in the port range")
+		return nil, model.Errf(model.CodeNoCapacity, "no free ports: %d needed, %d of %d in the port range %d-%d in use",
+			len(services), len(used), s.cfg.PortRangeEnd-s.cfg.PortRangeStart+1, s.cfg.PortRangeStart, s.cfg.PortRangeEnd)
 	}
 
 	password, err := secrets.Password(st.PasswordLength)
@@ -537,7 +538,7 @@ func (s *Service) UpdateDevice(ctx context.Context, p Principal, id string, req 
 			return nil, err
 		}
 		if q := owner.Quota.MaxTTLHours; q > 0 && (ttl == 0 || ttl > q) && !p.IsAdmin() {
-			return nil, model.Errf(model.CodeQuotaExceeded, "ttl must be between 1 and %d hours", q)
+			return nil, model.Errf(model.CodeQuotaExceeded, "ttl_hours must be between 1 and %d (the owner's maximum), got %d", q, ttl)
 		}
 		// The TTL counts from creation (API.md): expires_at = created_at + ttl.
 		var exp *time.Time

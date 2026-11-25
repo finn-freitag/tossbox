@@ -180,7 +180,7 @@ func TestGoldenImageGPUFamiliesSharedVFs(t *testing.T) {
 	}
 	// One VF used by docker-qemu and one by libvirt: the shared pool of 2 is full.
 	n.Devices = []DeviceLoad{{Driver: "docker-qemu", GPU: true, Res: model.Resources{RAMMB: 1024}}, {Driver: "libvirt", GPU: true, Res: model.Resources{RAMMB: 1024}}}
-	if _, err := Pick([]Node{n}, r, s); err == nil || !strings.Contains(err.Error(), "GPU slots in use") {
+	if _, err := Pick([]Node{n}, r, s); err == nil || !strings.Contains(err.Error(), "all 2 sriov slots in use") {
 		t.Fatalf("shared VF pool not counted: %v", err)
 	}
 	// VirGL can't serve Windows guests.
@@ -188,5 +188,29 @@ func TestGoldenImageGPUFamiliesSharedVFs(t *testing.T) {
 	n.Drivers["libvirt"] = DriverCaps{Families: []string{"linux", "windows"}, Services: []string{"ssh", "rdp"}, Healthy: true, GPUMode: "virgl", GPUSlots: -1, GPUFamilies: []string{"linux"}}
 	if _, err := Pick([]Node{n}, r, s); err == nil || !strings.Contains(err.Error(), "can't be used by windows") {
 		t.Fatalf("virgl for windows: %v", err)
+	}
+}
+
+func TestHelpfulMessages(t *testing.T) {
+	n := homelab() // 16384 MB RAM limit
+	s := model.DefaultSettings()
+	_, err := Pick([]Node{n}, req(20000, 0, 10), s)
+	if err == nil || !strings.Contains(err.Error(), "not enough RAM: 20000 MB requested, 16384 MB free of 16384 MB") {
+		t.Errorf("RAM: %v", err)
+	}
+	r := req(1024, 0, 10)
+	r.Services = []string{"adb"}
+	if _, err := Pick([]Node{n}, r, s); err == nil || !strings.Contains(err.Error(), "service adb not supported (supported: ssh, rdp, vnc, http, https)") {
+		t.Errorf("service: %v", err)
+	}
+	r = req(1024, 0, 10)
+	r.Family = "macos"
+	if _, err := Pick([]Node{n}, r, s); err == nil || !strings.Contains(err.Error(), "family macos not supported (supported: linux, windows)") {
+		t.Errorf("family: %v", err)
+	}
+	q := model.Quota{MaxRAMMB: 8192}
+	err = CheckQuota(q, model.Usage{RAMMB: 6144}, QuotaRequest{Res: model.Resources{RAMMB: 4096}})
+	if err == nil || err.Error() != "quota exceeded for RAM: 4096 MB requested, 6144 MB of your 8192 MB already used (2048 MB left)" {
+		t.Errorf("quota: %v", err)
 	}
 }

@@ -18,6 +18,7 @@ type DriverCaps struct {
 	Services   []string
 	FixedSlots int // > 0: count-based driver (orchard, usb-phone)
 	Healthy    bool
+	Message    string // health detail from the agent
 	// NetworkPolicies the driver enforces; empty = internet only (old agents).
 	NetworkPolicies []string
 	GPUMode         string   // "" = no GPU
@@ -259,28 +260,31 @@ func Pick(nodes []Node, req Request, s model.Settings) (Placement, error) {
 
 func fits(n *Node, drv string, caps DriverCaps, req Request, s model.Settings) string {
 	if !caps.Healthy {
+		if caps.Message != "" {
+			return "driver unhealthy: " + caps.Message
+		}
 		return "driver unhealthy"
 	}
 	if req.Family != "" && len(caps.Families) > 0 && !model.Allows(caps.Families, req.Family) {
-		return "family " + req.Family + " not supported"
+		return fmt.Sprintf("family %s not supported (supported: %s)", req.Family, strings.Join(caps.Families, ", "))
 	}
 	for _, svc := range req.Services {
 		if !model.Allows(caps.Services, svc) || len(caps.Services) == 0 {
-			return "service " + svc + " not supported"
+			return fmt.Sprintf("service %s not supported (supported: %s)", svc, listOrNone(caps.Services))
 		}
 	}
 	if p := req.NetworkPolicy; p != "" && p != model.NetworkInternet && !slices.Contains(caps.NetworkPolicies, p) {
-		return "network policy " + req.NetworkPolicy + " not supported"
+		return fmt.Sprintf("network policy %s not supported (supported: %s)", p, listOrNone(append([]string{model.NetworkInternet}, without(caps.NetworkPolicies, model.NetworkInternet)...)))
 	}
 	if name, ok := strings.CutPrefix(req.Images[drv], "local:"); ok && !slices.Contains(n.LocalImages, name) {
 		return "image " + name + " is not on this node (build it with Packer, see tb-templates/packer)"
 	}
 	if req.GPU {
 		if caps.GPUMode == "" {
-			return "no GPU"
+			return "no GPU offered by this driver"
 		}
 		if req.Family != "" && len(caps.GPUFamilies) > 0 && !slices.Contains(caps.GPUFamilies, req.Family) {
-			return "the GPU (" + caps.GPUMode + ") can't be used by " + req.Family + " guests"
+			return fmt.Sprintf("the GPU (%s) can't be used by %s guests (only: %s)", caps.GPUMode, req.Family, strings.Join(caps.GPUFamilies, ", "))
 		}
 		if caps.GPUSlots > 0 {
 			// SR-IOV virtual functions are one pool per node, shared by
@@ -295,33 +299,50 @@ func fits(n *Node, drv string, caps DriverCaps, req Request, s model.Settings) s
 				}
 			}
 			if used >= caps.GPUSlots {
-				return fmt.Sprintf("all %d GPU slots in use", caps.GPUSlots)
+				return fmt.Sprintf("no free GPU: all %d %s slots in use", caps.GPUSlots, caps.GPUMode)
 			}
 		}
 	}
 	if req.LicensePool != "" && n.FreePool(req.LicensePool, s) < 1 {
-		return "no free key in license pool " + req.LicensePool
+		return fmt.Sprintf("no free key in license pool %s (%d keys, all in use)", req.LicensePool, n.LicensePools[req.LicensePool])
 	}
 	if caps.FixedSlots > 0 {
 		if n.FreeSlots(s)[drv] < 1 {
-			return "no free slot"
+			return fmt.Sprintf("no free slot (all %d in use)", caps.FixedSlots)
 		}
 		return ""
 	}
 	c, free := n.Capacity(s), n.Free(s)
 	if c.RAMMB > 0 && req.Res.RAMMB > free.RAMMB {
-		return fmt.Sprintf("not enough RAM (%d MB free)", free.RAMMB)
+		return fmt.Sprintf("not enough RAM: %d MB requested, %d MB free of %d MB", req.Res.RAMMB, max(free.RAMMB, 0), c.RAMMB)
 	}
-	if CPUPercent(req.Res, n.HostCores) > free.CPUPercent+1e-9 {
-		return fmt.Sprintf("not enough CPU (%.0f%% free)", free.CPUPercent)
+	if want := CPUPercent(req.Res, n.HostCores); want > free.CPUPercent+1e-9 {
+		return fmt.Sprintf("not enough CPU: %.0f%% of the node requested, %.0f%% free of %.0f%%", want, max(free.CPUPercent, 0), c.CPUPercent)
 	}
 	if n.HostCores > 0 && req.Res.VCPUs > n.HostCores {
-		return fmt.Sprintf("more vCPUs than host cores (%d)", n.HostCores)
+		return fmt.Sprintf("%d vCPUs requested, but the node has only %d cores", req.Res.VCPUs, n.HostCores)
 	}
 	if c.StorageGB > 0 && req.Res.StorageGB > free.StorageGB {
-		return fmt.Sprintf("not enough storage (%d GB free)", free.StorageGB)
+		return fmt.Sprintf("not enough storage: %d GB requested, %d GB free of %d GB", req.Res.StorageGB, max(free.StorageGB, 0), c.StorageGB)
 	}
 	return ""
+}
+
+func listOrNone(l []string) string {
+	if len(l) == 0 {
+		return "none"
+	}
+	return strings.Join(l, ", ")
+}
+
+func without(l []string, x string) []string {
+	var out []string
+	for _, v := range l {
+		if v != x {
+			out = append(out, v)
+		}
+	}
+	return out
 }
 
 // QuotaRequest is what a new device adds to a user's usage.
@@ -334,23 +355,24 @@ type QuotaRequest struct {
 
 // CheckQuota verifies that a user may create one more device.
 func CheckQuota(q model.Quota, u model.Usage, r QuotaRequest) error {
-	over := func(what string, used, add, limit int64) error {
+	over := func(what, unit string, used, add, limit int64) error {
 		if limit > 0 && used+add > limit {
-			return model.Errf(model.CodeQuotaExceeded, "quota exceeded: %s (%d used + %d requested > %d)", what, used, add, limit)
+			return model.Errf(model.CodeQuotaExceeded, "quota exceeded for %s: %d%s requested, %d%s of your %d%s already used (%d%s left)",
+				what, add, unit, used, unit, limit, unit, max(limit-used, 0), unit)
 		}
 		return nil
 	}
 	checks := []error{
-		over("machines", int64(u.Machines), 1, int64(q.MaxMachines)),
-		over("vCPUs", int64(u.VCPUs), int64(r.Res.VCPUs), int64(q.MaxVCPUs)),
-		over("RAM (MB)", u.RAMMB, r.Res.RAMMB, q.MaxRAMMB),
-		over("storage (GB)", u.StorageGB, r.Res.StorageGB, q.MaxStorageGB),
+		over("machines", "", int64(u.Machines), 1, int64(q.MaxMachines)),
+		over("vCPUs", "", int64(u.VCPUs), int64(r.Res.VCPUs), int64(q.MaxVCPUs)),
+		over("RAM", " MB", u.RAMMB, r.Res.RAMMB, q.MaxRAMMB),
+		over("storage", " GB", u.StorageGB, r.Res.StorageGB, q.MaxStorageGB),
 	}
 	if r.Phone {
-		checks = append(checks, over("phones", int64(u.Phones), 1, int64(q.MaxPhones)))
+		checks = append(checks, over("phones", "", int64(u.Phones), 1, int64(q.MaxPhones)))
 	}
 	if r.GPU {
-		checks = append(checks, over("GPUs", int64(u.GPUs), 1, int64(q.MaxGPUs)))
+		checks = append(checks, over("devices with GPU", "", int64(u.GPUs), 1, int64(q.MaxGPUs)))
 	}
 	for _, err := range checks {
 		if err != nil {
@@ -358,7 +380,7 @@ func CheckQuota(q model.Quota, u model.Usage, r QuotaRequest) error {
 		}
 	}
 	if q.MaxTTLHours > 0 && (r.TTLHours == 0 || r.TTLHours > q.MaxTTLHours) {
-		return model.Errf(model.CodeQuotaExceeded, "ttl must be between 1 and %d hours", q.MaxTTLHours)
+		return model.Errf(model.CodeQuotaExceeded, "ttl_hours must be between 1 and %d (your maximum), got %d", q.MaxTTLHours, r.TTLHours)
 	}
 	return nil
 }

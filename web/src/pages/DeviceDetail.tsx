@@ -59,6 +59,19 @@ export function DeviceDetailPage() {
               {d.resources.vcpus} vCPU{d.resources.cpu_cap_percent ? ` (cap ${d.resources.cpu_cap_percent}% of node)` : ''}, {fmtMB(d.resources.ram_mb)} RAM,{' '}
               {d.resources.storage_gb} GB disk{d.gpu ? ', GPU' : ''}
             </dd>
+            {d.usage && (d.state === 'running' || d.usage.storage_used_mb > 0) && (
+              <>
+                <dt>Measured usage</dt>
+                <dd>
+                  {d.state === 'running' && (
+                    <>
+                      {fmtMB(d.usage.memory_used_mb)} RAM, {d.usage.cpu_cores} cores ({d.usage.cpu_percent}% of the node),{' '}
+                    </>
+                  )}
+                  {fmtMB(d.usage.storage_used_mb)} disk
+                </dd>
+              </>
+            )}
             <dt>Network</dt>
             <dd>{d.network_policy === 'offline' ? 'offline (no outbound traffic)' : 'internet (no access to private networks)'}</dd>
             <dt>Internal IP</dt>
